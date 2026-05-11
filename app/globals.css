@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 255 255 255;
+  --foreground: 15 46 95; /* matches marketing site ink */
+  --color-ink: 15 46 95;
+  --color-accent: 220 38 38;
+}
+
+html, body {
+  background-color: rgb(var(--background));
+  color: rgb(var(--foreground));
+}
+
+/* Smooth-scroll for in-page anchors */
+html {
+  scroll-behavior: smooth;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-5 py-3 text-sm font-semibold transition-colors duration-150;
+  }
+  .btn-primary {
+    @apply btn bg-accent-500 text-white hover:bg-accent-600;
+  }
+  .btn-secondary {
+    @apply btn border border-ink/15 bg-white text-ink hover:bg-brand-50;
+  }
+  .btn-dark {
+    @apply btn bg-ink text-white hover:bg-ink-soft;
+  }
+  .eyebrow {
+    @apply inline-block text-xs font-semibold uppercase tracking-widest text-accent-500;
+  }
+  .card {
+    @apply rounded-xl border border-ink/10 bg-white shadow-card;
+  }
+}
