@@ -1,4 +1,5 @@
 # Flexo Africa Customer Portal
+Last redeploy: 2026-05-11 (Stage G — new dashboard, job detail, profile)
 
 Customer-facing site for portal.flexoafrica.com. Sibling app to the MIS at jobs.flexoafrica.com.
 
