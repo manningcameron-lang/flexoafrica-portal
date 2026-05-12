@@ -12,9 +12,10 @@ import {
   SCREEN_RULING_OPTIONS,
   PRINT_SIDE_OPTIONS,
   TURNAROUND_TIERS,
+  DELIVERY_METHOD_OPTIONS,
   VAT_PERCENT,
 } from "@/lib/plate-types";
-import { calcPrice, formatZAR } from "@/lib/pricing";
+import { calcPrice, calcOrderTotals, formatZAR } from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
 import { analyzePdfClient } from "@/lib/pdf-analyzer";
 
@@ -51,6 +52,7 @@ export default function NewOrderPage() {
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [requiredByDate, setRequiredByDate] = useState("");
   const [turnaroundTier, setTurnaroundTier] = useState("standard");
+  const [deliveryMethod, setDeliveryMethod] = useState("delivery");
 
   // ----- line items -----
   const [lineItems, setLineItems] = useState([newLineItem()]);
@@ -87,29 +89,44 @@ export default function NewOrderPage() {
   }, [profile]); // eslint-disable-line
 
   // ----- pricing -----
+  // Plate quantity = number of ticked separations (one plate per colour).
+  // Falls back to 1 if nothing ticked yet so the form still renders something.
+  function platesForLineItem(li) {
+    const sel = li.selectedColors || {};
+    const ticked = Object.values(sel).filter(Boolean).length;
+    return ticked || 1;
+  }
+
+  const tierInfo = TURNAROUND_TIERS.find((t) => t.id === turnaroundTier) || TURNAROUND_TIERS[0];
+  const upliftPct = tierInfo.upliftPct || 0;
+  const isExpress = upliftPct > 0;
+
   const lineItemPrices = useMemo(
     () =>
       lineItems.map((li) =>
         calcPrice({
           widthCm: li.widthCm,
           heightCm: li.heightCm,
-          qty: li.qty,
-          isExpress: false,
+          qty: platesForLineItem(li),
+          isExpress,
         })
       ),
-    [lineItems]
+    [lineItems, isExpress]
   );
 
-  const subtotal = useMemo(
-    () => lineItemPrices.reduce((sum, p) => sum + p.subtotal, 0),
-    [lineItemPrices]
+  const orderTotals = useMemo(
+    () => calcOrderTotals(lineItemPrices, deliveryMethod),
+    [lineItemPrices, deliveryMethod]
   );
-  const tierInfo = TURNAROUND_TIERS.find((t) => t.id === turnaroundTier) || TURNAROUND_TIERS[0];
-  const upliftPct = tierInfo.upliftPct || 0;
-  const expressUplift = subtotal * (upliftPct / 100);
-  const beforeVat = subtotal + expressUplift;
-  const vat = beforeVat * (VAT_PERCENT / 100);
-  const total = beforeVat + vat;
+  const {
+    subtotal,
+    rushUplift: expressUplift,
+    deliveryFee: deliveryFeeTotal,
+    deliveryPct: deliveryFeePctApplied,
+    vat,
+    total,
+    isCollection,
+  } = orderTotals;
 
   // Accepts either:
   //   updateLineItem(idx, "fieldName", value)   — single field
@@ -170,6 +187,10 @@ export default function NewOrderPage() {
           deliveryAddress,
           requiredByDate,
           tier: turnaroundTier,
+          deliveryMethod,
+          deliveryFeePct: deliveryFeePctApplied,
+          deliveryFeeAmount: deliveryFeeTotal,
+          orderTotalIncVat: total,
         },
         lineItems,
       });
@@ -232,6 +253,7 @@ export default function NewOrderPage() {
             subtotal={subtotal}
             expressUplift={expressUplift}
             upliftPct={upliftPct}
+            deliveryFee={deliveryFeeTotal}
             vat={vat}
             lineItemCount={lineItems.length}
             tierLabel={tierInfo.label}
@@ -280,14 +302,6 @@ export default function NewOrderPage() {
                 onRemove={() => removeLineItem(idx)}
               />
             ))}
-
-            <button
-              type="button"
-              onClick={addLineItem}
-              className="mt-4 w-full px-5 py-3 bg-white border-2 border-dashed border-ink/20 hover:border-accent-500 text-ink font-medium rounded-md transition-colors"
-            >
-              + Add another plate
-            </button>
           </div>
 
           {/* STEP 2: Order details */}
@@ -310,6 +324,38 @@ export default function NewOrderPage() {
                     />
                   ))}
                 </div>
+              </div>
+
+              {/* Delivery vs Collection */}
+              <div>
+                <div className="text-sm font-semibold text-ink mb-3">
+                  Delivery method <span className="text-accent-500">*</span>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {DELIVERY_METHOD_OPTIONS.map((opt) => (
+                    <DeliveryMethodCard
+                      key={opt.id}
+                      option={opt}
+                      selected={deliveryMethod === opt.id}
+                      onClick={() => setDeliveryMethod(opt.id)}
+                    />
+                  ))}
+                </div>
+                {deliveryMethod === "delivery" && deliveryFeePctApplied > 0 && (
+                  <p className="mt-2 text-xs text-ink-muted">
+                    Delivery fee for this order size:{" "}
+                    <span className="font-semibold text-ink">
+                      {deliveryFeePctApplied}%
+                    </span>{" "}
+                    of subtotal. Larger orders qualify for lower percentages.
+                  </p>
+                )}
+                {isCollection && (
+                  <p className="mt-2 text-xs text-green-700">
+                    Collection selected, no delivery fee charged. We'll let you
+                    know when your plates are ready to collect.
+                  </p>
+                )}
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
@@ -355,11 +401,16 @@ export default function NewOrderPage() {
                   <div className="text-xs uppercase tracking-wider text-white/70">Total incl. VAT</div>
                   <div className="text-4xl font-bold mt-1">{formatZAR(total)}</div>
                   <div className="text-xs text-white/60 mt-1">
-                    {lineItems.length} {lineItems.length === 1 ? "plate" : "plates"} · {tierInfo.label} turnaround · {VAT_PERCENT}% VAT
+                    {tierInfo.label} turnaround · includes delivery · {VAT_PERCENT}% VAT
                   </div>
                   {upliftPct > 0 && (
                     <div className="mt-2 text-xs text-accent-300">
                       Includes Express uplift +{upliftPct}% ({formatZAR(expressUplift)})
+                    </div>
+                  )}
+                  {deliveryFeeTotal > 0 && (
+                    <div className="mt-1 text-xs text-white/60">
+                      Delivery fee: {formatZAR(deliveryFeeTotal)}
                     </div>
                   )}
                 </div>
@@ -691,37 +742,28 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
               />
             </label>
             <label className="block">
-              <span className="text-xs text-ink-muted">Quantity</span>
-              <div className="mt-1 flex items-center">
-                <button
-                  type="button"
-                  onClick={() => onChange("qty", Math.max(1, Number(lineItem.qty || 1) - 1))}
-                  className="px-3 py-2 border border-ink/20 rounded-l-md hover:bg-ink/5"
-                  aria-label="Decrease quantity"
-                >−</button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step="1"
-                  value={lineItem.qty}
-                  onChange={(e) => onChange("qty", e.target.value)}
-                  className="block w-full text-center border-t border-b border-ink/20 px-2 py-2 focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => onChange("qty", Number(lineItem.qty || 1) + 1)}
-                  className="px-3 py-2 border border-ink/20 rounded-r-md hover:bg-ink/5"
-                  aria-label="Increase quantity"
-                >+</button>
+              <span className="text-xs text-ink-muted">Plates (auto)</span>
+              <div className="mt-1 flex items-center rounded-md border border-ink/20 bg-ink/[0.02] px-3 py-2 h-[42px]">
+                <span className="text-2xl font-bold text-ink">
+                  {platesFromColors}
+                </span>
+                <span className="ml-2 text-xs text-ink-muted">
+                  from {Object.keys(lineItem.selectedColors || {}).length || "—"} colours
+                </span>
               </div>
             </label>
           </div>
           {price && price.areaCm2 > 0 && (
             <p className="mt-2 text-xs text-ink-muted">
+              Plate size with trim:{" "}
+              <span className="font-semibold text-ink">
+                {price.billedWidthCm} × {price.billedHeightCm} cm
+              </span>
+              <span className="mx-2">·</span>
               Plate area: <span className="font-semibold text-ink">{price.areaCm2} cm²</span>
               <span className="mx-2">·</span>
-              Line total: <span className="font-semibold text-ink">{formatZAR(price.subtotal)}</span>
+              Line total ({platesFromColors} {platesFromColors === 1 ? "plate" : "plates"}):{" "}
+              <span className="font-semibold text-ink">{formatZAR(price.subtotal)}</span>
             </p>
           )}
         </div>
@@ -893,6 +935,44 @@ function PrintSideCard({ side, selected, onClick }) {
         </span>
       </div>
       <p className="mt-2 text-xs text-ink-muted">{side.note}</p>
+    </button>
+  );
+}
+
+// ─── Delivery method selector (Delivery / Collection) ────────────────────
+
+function DeliveryMethodCard({ option, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-xl border-2 p-4 text-left transition " +
+        (selected
+          ? "border-accent-500 bg-accent-50"
+          : "border-ink/10 bg-white hover:border-ink/30")
+      }
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-bold text-ink">{option.label}</div>
+          <div className="text-xs text-ink-muted mt-0.5">{option.note}</div>
+        </div>
+        <span
+          className={
+            "h-5 w-5 rounded-full border-2 " +
+            (selected
+              ? "border-accent-500 bg-accent-500"
+              : "border-ink/20 bg-white")
+          }
+        >
+          {selected && (
+            <svg viewBox="0 0 20 20" fill="white" className="h-full w-full p-0.5">
+              <path d="M16.7 5.3a1 1 0 010 1.4l-7.4 7.4a1 1 0 01-1.4 0L3.3 9.5a1 1 0 011.4-1.4l3.9 3.9 6.7-6.7a1 1 0 011.4 0z" />
+            </svg>
+          )}
+        </span>
+      </div>
     </button>
   );
 }
@@ -1265,13 +1345,13 @@ function TrustIcon({ id }) {
 
 // ─── Fast quote (sidebar) ─────────────────────────────────────────────────
 
-function FastQuote({ total, subtotal, expressUplift, upliftPct, vat, lineItemCount, tierLabel }) {
+function FastQuote({ total, subtotal, expressUplift, upliftPct, deliveryFee, vat, lineItemCount, tierLabel }) {
   return (
     <div className="rounded-xl border border-ink/10 bg-white p-4">
       <div className="text-xs uppercase tracking-wider text-ink-muted font-semibold">Fast quote</div>
       <div className="mt-2 text-2xl font-bold text-ink">{formatZAR(total)}</div>
       <div className="mt-1 text-[11px] text-ink-muted">
-        {lineItemCount} {lineItemCount === 1 ? "plate" : "plates"} · {tierLabel} · incl. {VAT_PERCENT}% VAT
+        {tierLabel} · incl. {VAT_PERCENT}% VAT
       </div>
       <div className="mt-3 pt-3 border-t border-ink/10 space-y-1 text-xs">
         <div className="flex justify-between">
@@ -1284,13 +1364,19 @@ function FastQuote({ total, subtotal, expressUplift, upliftPct, vat, lineItemCou
             <span className="font-medium">{formatZAR(expressUplift)}</span>
           </div>
         )}
+        {deliveryFee > 0 && (
+          <div className="flex justify-between">
+            <span className="text-ink-muted">Delivery</span>
+            <span className="text-ink font-medium">{formatZAR(deliveryFee)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span className="text-ink-muted">VAT</span>
           <span className="text-ink font-medium">{formatZAR(vat)}</span>
         </div>
       </div>
       <p className="mt-3 text-[10px] text-ink-muted italic leading-relaxed">
-        Fast quote based on dimensions. Final price confirmed when artwork is reviewed.
+        Fast quote based on dimensions plus trim allowance. Final price confirmed when artwork is reviewed.
       </p>
     </div>
   );
