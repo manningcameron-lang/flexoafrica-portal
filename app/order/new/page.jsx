@@ -8,6 +8,10 @@ import {
   PLATE_TYPES,
   TIERS,
   SUBSTRATE_OPTIONS,
+  INK_TYPES,
+  SCREEN_RULING_OPTIONS,
+  PRINT_SIDE_OPTIONS,
+  TURNAROUND_TIERS,
   VAT_PERCENT,
 } from "@/lib/plate-types";
 import { calcPrice, formatZAR } from "@/lib/pricing";
@@ -18,6 +22,10 @@ function newLineItem() {
     plateTier: "",
     plateTypeId: "",
     substrate: "",
+    inkType: "",
+    screenRuling: "",
+    printSide: "",
+    cylinderSize: "",
     widthCm: "",
     heightCm: "",
     qty: 1,
@@ -34,6 +42,7 @@ export default function NewOrderPage() {
   const [poNumber, setPoNumber] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [requiredByDate, setRequiredByDate] = useState("");
+  const [turnaroundTier, setTurnaroundTier] = useState("standard");
 
   // ----- line items -----
   const [lineItems, setLineItems] = useState([newLineItem()]);
@@ -55,9 +64,17 @@ export default function NewOrderPage() {
       );
   }, [user, profile, loading, router]);
 
+  // Auto-populate delivery address with everything from the profile we know
+  // (company + contact + phone + email). Runs once when the profile arrives.
   useEffect(() => {
     if (profile && !deliveryAddress) {
-      setDeliveryAddress(profile.company ? profile.company + "\n" : "");
+      const lines = [];
+      if (profile.company) lines.push(profile.company);
+      if (profile.contactName) lines.push(`Attn: ${profile.contactName}`);
+      if (profile.phone) lines.push(profile.phone);
+      if (profile.email) lines.push(profile.email);
+      lines.push("", "Delivery address:");
+      setDeliveryAddress(lines.join("\n"));
     }
   }, [profile]); // eslint-disable-line
 
@@ -79,8 +96,12 @@ export default function NewOrderPage() {
     () => lineItemPrices.reduce((sum, p) => sum + p.subtotal, 0),
     [lineItemPrices]
   );
-  const vat = subtotal * (VAT_PERCENT / 100);
-  const total = subtotal + vat;
+  const tierInfo = TURNAROUND_TIERS.find((t) => t.id === turnaroundTier) || TURNAROUND_TIERS[0];
+  const upliftPct = tierInfo.upliftPct || 0;
+  const expressUplift = subtotal * (upliftPct / 100);
+  const beforeVat = subtotal + expressUplift;
+  const vat = beforeVat * (VAT_PERCENT / 100);
+  const total = beforeVat + vat;
 
   function updateLineItem(idx, field, value) {
     setLineItems((items) =>
@@ -103,6 +124,8 @@ export default function NewOrderPage() {
       if (!li.substrate) return `Plate ${idx}: choose a substrate.`;
       if (!li.plateTier) return `Plate ${idx}: choose a tier.`;
       if (!li.plateTypeId) return `Plate ${idx}: choose a thickness.`;
+      if (!li.inkType) return `Plate ${idx}: choose an ink type.`;
+      if (!li.printSide) return `Plate ${idx}: choose surface or reverse print.`;
       if (!(Number(li.widthCm) > 0)) return `Plate ${idx}: enter width.`;
       if (!(Number(li.heightCm) > 0)) return `Plate ${idx}: enter height.`;
       if (!(Number(li.qty) > 0)) return `Plate ${idx}: enter quantity.`;
@@ -129,7 +152,7 @@ export default function NewOrderPage() {
           poNumber,
           deliveryAddress,
           requiredByDate,
-          tier: "standard",
+          tier: turnaroundTier,
         },
         lineItems,
       });
@@ -187,7 +210,15 @@ export default function NewOrderPage() {
           </div>
 
           {/* Fast quote calculator */}
-          <FastQuote total={total} subtotal={subtotal} vat={vat} lineItemCount={lineItems.length} />
+          <FastQuote
+            total={total}
+            subtotal={subtotal}
+            expressUplift={expressUplift}
+            upliftPct={upliftPct}
+            vat={vat}
+            lineItemCount={lineItems.length}
+            tierLabel={tierInfo.label}
+          />
 
           {/* Contact for help */}
           <div className="rounded-xl border border-ink/10 bg-white p-4 text-sm">
@@ -246,7 +277,24 @@ export default function NewOrderPage() {
           <div>
             <StepHeader number="2" title="Order details" />
 
-            <div className="bg-white rounded-xl border border-ink/10 p-6 space-y-4 shadow-card">
+            <div className="bg-white rounded-xl border border-ink/10 p-6 space-y-5 shadow-card">
+              {/* Turnaround tier */}
+              <div>
+                <div className="text-sm font-semibold text-ink mb-3">
+                  Turnaround <span className="text-accent-500">*</span>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {TURNAROUND_TIERS.map((t) => (
+                    <TurnaroundCard
+                      key={t.id}
+                      tier={t}
+                      selected={turnaroundTier === t.id}
+                      onClick={() => setTurnaroundTier(t.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <Field
                   label="PO number (optional)"
@@ -265,12 +313,15 @@ export default function NewOrderPage() {
                 <span className="text-sm font-medium text-ink">
                   Delivery address <span className="text-accent-500">*</span>
                 </span>
+                <p className="text-xs text-ink-muted mt-1 mb-1">
+                  Pre-filled from your profile. Add the actual street address below.
+                </p>
                 <textarea
                   required
-                  rows={3}
+                  rows={5}
                   value={deliveryAddress}
                   onChange={(e) => setDeliveryAddress(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+                  className="block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500 font-mono text-sm"
                   placeholder="Company, street, city, country, contact name, phone"
                 />
               </label>
@@ -287,8 +338,13 @@ export default function NewOrderPage() {
                   <div className="text-xs uppercase tracking-wider text-white/70">Total incl. VAT</div>
                   <div className="text-4xl font-bold mt-1">{formatZAR(total)}</div>
                   <div className="text-xs text-white/60 mt-1">
-                    {lineItems.length} {lineItems.length === 1 ? "plate" : "plates"} · {VAT_PERCENT}% VAT
+                    {lineItems.length} {lineItems.length === 1 ? "plate" : "plates"} · {tierInfo.label} turnaround · {VAT_PERCENT}% VAT
                   </div>
+                  {upliftPct > 0 && (
+                    <div className="mt-2 text-xs text-accent-300">
+                      Includes Express uplift +{upliftPct}% ({formatZAR(expressUplift)})
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2 sm:items-end">
                   <button
@@ -421,6 +477,74 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
             )}
           </div>
         )}
+
+        {/* Ink type */}
+        <div>
+          <div className="text-sm font-semibold text-ink mb-3">
+            Ink type <span className="text-accent-500">*</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {INK_TYPES.map((ink) => (
+              <InkCircle
+                key={ink.id}
+                ink={ink}
+                selected={lineItem.inkType === ink.id}
+                onClick={() => onChange("inkType", ink.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Print side */}
+        <div>
+          <div className="text-sm font-semibold text-ink mb-3">
+            Print side <span className="text-accent-500">*</span>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {PRINT_SIDE_OPTIONS.map((side) => (
+              <PrintSideCard
+                key={side.id}
+                side={side}
+                selected={lineItem.printSide === side.id}
+                onClick={() => onChange("printSide", side.id)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Screen ruling + cylinder size */}
+        <div>
+          <div className="text-sm font-semibold text-ink mb-2">
+            Press setup
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs text-ink-muted">Screen ruling (LPI)</span>
+              <select
+                value={lineItem.screenRuling || ""}
+                onChange={(e) => onChange("screenRuling", e.target.value)}
+                className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+              >
+                <option value="">Select ruling (optional)</option>
+                {SCREEN_RULING_OPTIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs text-ink-muted">Cylinder / tooth size</span>
+              <input
+                type="text"
+                value={lineItem.cylinderSize || ""}
+                onChange={(e) => onChange("cylinderSize", e.target.value)}
+                placeholder="e.g. 120 teeth or 508mm"
+                className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+              />
+            </label>
+          </div>
+        </div>
 
         {/* Dimensions */}
         <div>
@@ -589,6 +713,128 @@ function SubstrateIcon({ id }) {
   );
 }
 
+// ─── Ink type selector (3 circles) ────────────────────────────────────────
+
+function InkCircle({ ink, selected, onClick }) {
+  const colorMap = {
+    waterbased: "bg-brand-blue/15 text-brand-blue",
+    solvent: "bg-brand-orange/15 text-brand-orange",
+    uv: "bg-brand-yellow/30 text-yellow-700",
+  };
+  const selectedColor = {
+    waterbased: "border-brand-blue bg-brand-blue text-white",
+    solvent: "border-brand-orange bg-brand-orange text-white",
+    uv: "border-brand-yellow bg-brand-yellow text-ink",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "group rounded-xl border-2 p-3 text-center transition " +
+        (selected
+          ? "border-accent-500 bg-accent-50"
+          : "border-ink/10 bg-white hover:border-ink/30")
+      }
+    >
+      <div
+        className={
+          "mx-auto h-14 w-14 rounded-full grid place-items-center transition border-2 " +
+          (selected
+            ? selectedColor[ink.id]
+            : "border-transparent " + (colorMap[ink.id] || "bg-ink/5 text-ink-muted"))
+        }
+      >
+        <InkDrop />
+      </div>
+      <div className={"mt-2 text-xs font-medium " + (selected ? "text-accent-700" : "text-ink")}>
+        {ink.label}
+      </div>
+    </button>
+  );
+}
+
+function InkDrop() {
+  return (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 3c-3 5-6 8-6 12a6 6 0 0012 0c0-4-3-7-6-12z" />
+    </svg>
+  );
+}
+
+// ─── Print side selector ──────────────────────────────────────────────────
+
+function PrintSideCard({ side, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-xl border-2 p-4 text-left transition " +
+        (selected
+          ? "border-accent-500 bg-accent-50"
+          : "border-ink/10 bg-white hover:border-ink/30")
+      }
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-bold text-ink">{side.label}</span>
+        <span
+          className={
+            "h-5 w-5 rounded-full border-2 " +
+            (selected ? "border-accent-500 bg-accent-500" : "border-ink/20 bg-white")
+          }
+        >
+          {selected && (
+            <svg viewBox="0 0 20 20" fill="white" className="h-full w-full p-0.5">
+              <path d="M16.7 5.3a1 1 0 010 1.4l-7.4 7.4a1 1 0 01-1.4 0L3.3 9.5a1 1 0 011.4-1.4l3.9 3.9 6.7-6.7a1 1 0 011.4 0z" />
+            </svg>
+          )}
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">{side.note}</p>
+    </button>
+  );
+}
+
+// ─── Turnaround tier selector (Standard / Express) ────────────────────────
+
+function TurnaroundCard({ tier, selected, onClick }) {
+  const isExpress = tier.id === "express";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "rounded-xl border-2 p-4 text-left transition " +
+        (selected
+          ? isExpress
+            ? "border-accent-500 bg-accent-500 text-white"
+            : "border-ink bg-ink text-white"
+          : "border-ink/10 bg-white text-ink hover:border-ink/30")
+      }
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-bold">{tier.label}</div>
+          <div className={"text-xs mt-0.5 " + (selected ? "text-white/85" : "text-ink-muted")}>
+            {tier.sub}
+          </div>
+        </div>
+        {tier.upliftPct > 0 && (
+          <div
+            className={
+              "text-xs font-bold px-2 py-0.5 rounded-full " +
+              (selected ? "bg-white text-accent-600" : "bg-accent-500/15 text-accent-600")
+            }
+          >
+            +{tier.upliftPct}%
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
 // ─── Plate tier card selector ─────────────────────────────────────────────
 
 const TIER_INFO = {
@@ -736,19 +982,25 @@ function TrustIcon({ id }) {
 
 // ─── Fast quote (sidebar) ─────────────────────────────────────────────────
 
-function FastQuote({ total, subtotal, vat, lineItemCount }) {
+function FastQuote({ total, subtotal, expressUplift, upliftPct, vat, lineItemCount, tierLabel }) {
   return (
     <div className="rounded-xl border border-ink/10 bg-white p-4">
       <div className="text-xs uppercase tracking-wider text-ink-muted font-semibold">Fast quote</div>
       <div className="mt-2 text-2xl font-bold text-ink">{formatZAR(total)}</div>
       <div className="mt-1 text-[11px] text-ink-muted">
-        {lineItemCount} {lineItemCount === 1 ? "plate" : "plates"} · incl. {VAT_PERCENT}% VAT
+        {lineItemCount} {lineItemCount === 1 ? "plate" : "plates"} · {tierLabel} · incl. {VAT_PERCENT}% VAT
       </div>
       <div className="mt-3 pt-3 border-t border-ink/10 space-y-1 text-xs">
         <div className="flex justify-between">
           <span className="text-ink-muted">Subtotal</span>
           <span className="text-ink font-medium">{formatZAR(subtotal)}</span>
         </div>
+        {upliftPct > 0 && (
+          <div className="flex justify-between text-accent-600">
+            <span>Express +{upliftPct}%</span>
+            <span className="font-medium">{formatZAR(expressUplift)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span className="text-ink-muted">VAT</span>
           <span className="text-ink font-medium">{formatZAR(vat)}</span>
