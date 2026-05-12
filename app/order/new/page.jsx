@@ -1056,6 +1056,25 @@ function PdfAnalysisReport({ analysis }) {
           )}
         </div>
       </div>
+
+      {/* Inline composite preview, rendered client-side */}
+      {analysis.previewDataUrl && (
+        <div className="mt-3 pt-3 border-t border-current/10">
+          <div className="text-xs uppercase tracking-wider text-ink-muted font-semibold mb-2">
+            Composite preview
+          </div>
+          <div className="bg-white rounded-md border border-ink/10 p-2">
+            <img
+              src={analysis.previewDataUrl}
+              alt="PDF page 1 composite preview"
+              className="block w-full max-h-[480px] object-contain mx-auto"
+            />
+          </div>
+          <div className="text-[10px] text-ink-muted text-center mt-1 italic">
+            Rendered in your browser from the dropped PDF
+          </div>
+        </div>
+      )}
     </div>
   );
 }
