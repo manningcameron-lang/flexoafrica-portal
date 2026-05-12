@@ -31,12 +31,14 @@ function newLineItem() {
     heightCm: "",
     qty: 1,
     specialInstructions: "",
+    // Customer's own name / reference for this job (free text).
+    description: "",
     pdfFile: null,
-    // pdfAnalysis: null = no file dropped yet
-    // pdfAnalysis: { loading: true } = analysis in progress
-    // pdfAnalysis: { ok: true, widthCm, heightCm, pageCount, warnings: [] }
-    // pdfAnalysis: { ok: false, error: "..." }
     pdfAnalysis: null,
+    // Map of separation key -> boolean. Populated when a PDF is dropped;
+    // every detected separation defaults to true. The customer can untick
+    // any they don't need. Plate count = number of true entries.
+    selectedColors: {},
   };
 }
 
@@ -407,19 +409,21 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
   );
   const selectedType = PLATE_TYPES.find((t) => t.id === lineItem.plateTypeId);
 
-  // Drop a PDF: kick off analysis, then auto-fill width / length from the
-  // PDF page dimensions. Batched so all changes hit state in one update.
+  // Drop a PDF: kick off analysis, auto-fill width / length, default-tick
+  // every detected separation. Batched so all updates land in one state change.
   async function handlePdfDrop(file) {
     if (!file) {
-      onChange({ pdfFile: null, pdfAnalysis: null });
+      onChange({
+        pdfFile: null,
+        pdfAnalysis: null,
+        selectedColors: {},
+      });
       return;
     }
     onChange({ pdfFile: file, pdfAnalysis: { loading: true } });
     try {
       const result = await analyzePdfClient(file);
       const patch = { pdfAnalysis: result };
-      // Only auto-fill the dimensions when analysis succeeded AND the user
-      // hasn't already entered something. Don't trample their input.
       if (result.ok) {
         if (!lineItem.widthCm || lineItem.widthCm === "") {
           patch.widthCm = String(result.widthCm);
@@ -427,6 +431,12 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
         if (!lineItem.heightCm || lineItem.heightCm === "") {
           patch.heightCm = String(result.heightCm);
         }
+        // Default-tick every detected separation.
+        const sel = {};
+        for (const s of result.separations || []) {
+          sel[s.key] = true;
+        }
+        patch.selectedColors = sel;
       }
       onChange(patch);
     } catch (err) {
@@ -439,6 +449,20 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
       });
     }
   }
+
+  function toggleColor(key) {
+    const cur = lineItem.selectedColors || {};
+    onChange({
+      selectedColors: { ...cur, [key]: !cur[key] },
+    });
+  }
+
+  // Number of plates this line item will produce = number of ticked colours,
+  // or 1 if no PDF / no separations yet.
+  const selectedColorCount = Object.values(
+    lineItem.selectedColors || {}
+  ).filter(Boolean).length;
+  const platesFromColors = selectedColorCount || 1;
 
   return (
     <div className="bg-white rounded-xl border border-ink/10 shadow-card mb-4">
@@ -474,9 +498,35 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
             file={lineItem.pdfFile}
             onChange={handlePdfDrop}
           />
-          {/* Inline analysis report */}
-          <PdfAnalysisReport analysis={lineItem.pdfAnalysis} />
+          {/* Inline analysis report + separations + checkboxes */}
+          <PdfAnalysisReport
+            analysis={lineItem.pdfAnalysis}
+            selectedColors={lineItem.selectedColors}
+            onToggleColor={toggleColor}
+            platesFromColors={platesFromColors}
+          />
         </div>
+
+        {/* Job description — customer's own reference for this job */}
+        {lineItem.pdfFile && (
+          <div>
+            <label className="block">
+              <span className="text-sm font-semibold text-ink">
+                Your job description
+              </span>
+              <span className="ml-2 text-xs font-normal text-ink-muted">
+                Your reference for this plate (we keep it on the job record)
+              </span>
+              <input
+                type="text"
+                value={lineItem.description}
+                onChange={(e) => onChange("description", e.target.value)}
+                placeholder="e.g. Irfaan Bemaths Super Meals - 50g packs"
+                className="mt-2 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+              />
+            </label>
+          </div>
+        )}
 
         {/* Substrate visual selector */}
         <div>
@@ -984,7 +1034,12 @@ function PdfDropzone({ file, onChange }) {
 
 // ─── PDF analysis report (shown inline after a PDF is dropped) ────────────
 
-function PdfAnalysisReport({ analysis }) {
+function PdfAnalysisReport({
+  analysis,
+  selectedColors,
+  onToggleColor,
+  platesFromColors,
+}) {
   if (!analysis) return null;
 
   // Loading state — show while pdfjs is parsing.
@@ -996,7 +1051,7 @@ function PdfAnalysisReport({ analysis }) {
           role="status"
           aria-label="Analysing"
         />
-        Checking your PDF...
+        Checking your PDF and generating separations...
       </div>
     );
   }
@@ -1016,66 +1071,146 @@ function PdfAnalysisReport({ analysis }) {
     ? "border-amber-200 bg-amber-50"
     : "border-green-200 bg-green-50";
   const headlineDot = hasWarnings ? "bg-amber-500" : "bg-green-500";
+  const separations = analysis.separations || [];
 
   return (
-    <div className={"mt-3 rounded-md border px-4 py-3 text-sm " + headlineColor}>
-      <div className="flex items-start gap-3">
-        <span
-          className={"mt-1 inline-block h-2 w-2 rounded-full flex-none " + headlineDot}
-        />
-        <div className="flex-1">
-          <div className="font-semibold text-ink">
-            Page 1: {analysis.widthCm} × {analysis.heightCm} cm
-            <span className="ml-2 text-xs font-normal text-ink-muted">
-              ({analysis.widthMm.toFixed(0)} × {analysis.heightMm.toFixed(0)} mm)
-            </span>
-          </div>
-          <div className="text-xs text-ink-muted mt-0.5">
-            {analysis.pageCount} {analysis.pageCount === 1 ? "page" : "pages"}{" "}
-            · {analysis.fileSizeMb} MB · Print width and length auto-filled below
-          </div>
+    <div className="mt-3 space-y-3">
+      {/* Summary banner */}
+      <div className={"rounded-md border px-4 py-3 text-sm " + headlineColor}>
+        <div className="flex items-start gap-3">
+          <span
+            className={
+              "mt-1 inline-block h-2 w-2 rounded-full flex-none " + headlineDot
+            }
+          />
+          <div className="flex-1">
+            <div className="font-semibold text-ink">
+              Page 1: {analysis.widthCm} × {analysis.heightCm} cm
+              <span className="ml-2 text-xs font-normal text-ink-muted">
+                ({analysis.widthMm.toFixed(0)} × {analysis.heightMm.toFixed(0)} mm)
+              </span>
+            </div>
+            <div className="text-xs text-ink-muted mt-0.5">
+              {analysis.pageCount}{" "}
+              {analysis.pageCount === 1 ? "page" : "pages"} ·{" "}
+              {analysis.fileSizeMb} MB · {platesFromColors}{" "}
+              {platesFromColors === 1 ? "plate" : "plates"} from this PDF
+            </div>
 
-          {hasWarnings && (
-            <ul className="mt-2 space-y-1">
-              {analysis.warnings.map((w, i) => (
-                <li
-                  key={i}
-                  className={
-                    "text-xs " +
-                    (w.level === "error"
-                      ? "text-red-700"
-                      : w.level === "warning"
-                      ? "text-amber-800"
-                      : "text-ink-muted")
-                  }
-                >
-                  • {w.message}
-                </li>
-              ))}
-            </ul>
-          )}
+            {hasWarnings && (
+              <ul className="mt-2 space-y-1">
+                {analysis.warnings.map((w, i) => (
+                  <li
+                    key={i}
+                    className={
+                      "text-xs " +
+                      (w.level === "error"
+                        ? "text-red-700"
+                        : w.level === "warning"
+                        ? "text-amber-800"
+                        : "text-ink-muted")
+                    }
+                  >
+                    • {w.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Inline composite preview, rendered client-side */}
-      {analysis.previewDataUrl && (
-        <div className="mt-3 pt-3 border-t border-current/10">
-          <div className="text-xs uppercase tracking-wider text-ink-muted font-semibold mb-2">
-            Composite preview
-          </div>
-          <div className="bg-white rounded-md border border-ink/10 p-2">
-            <img
-              src={analysis.previewDataUrl}
-              alt="PDF page 1 composite preview"
-              className="block w-full max-h-[480px] object-contain mx-auto"
-            />
-          </div>
-          <div className="text-[10px] text-ink-muted text-center mt-1 italic">
-            Rendered in your browser from the dropped PDF
-          </div>
+      {/* Composite + separations grid */}
+      <div className="rounded-md border border-ink/10 bg-white p-3">
+        <div className="text-xs uppercase tracking-wider text-ink-muted font-semibold mb-3">
+          Tick the colours you want plates for
         </div>
-      )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {/* Composite — always shown, no checkbox (it's a preview, not a plate) */}
+          {analysis.previewDataUrl && (
+            <div className="rounded-md border border-ink/10 overflow-hidden bg-ink">
+              <div className="text-[10px] uppercase tracking-wider text-white px-2 py-1 font-semibold text-center">
+                Composite
+              </div>
+              <div className="bg-white aspect-[4/3] flex items-center justify-center overflow-hidden">
+                <img
+                  src={analysis.previewDataUrl}
+                  alt="PDF page 1 composite preview"
+                  className="block max-w-full max-h-full object-contain"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Separations */}
+          {separations.map((sep) => (
+            <SeparationTile
+              key={sep.key}
+              sep={sep}
+              selected={!!(selectedColors && selectedColors[sep.key])}
+              onToggle={() => onToggleColor(sep.key)}
+            />
+          ))}
+        </div>
+
+        <div className="mt-3 text-[10px] text-ink-muted italic">
+          CMYK separations are approximations rendered from the composite in
+          your browser. Spot colours are detected by name from the PDF and may
+          not include a thumbnail. Untick anything you do not need plated.
+        </div>
+      </div>
     </div>
+  );
+}
+
+function SeparationTile({ sep, selected, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={
+        "text-left rounded-md border-2 overflow-hidden transition " +
+        (selected
+          ? "border-accent-500"
+          : "border-ink/10 hover:border-ink/30 opacity-60")
+      }
+    >
+      <div className="flex items-center justify-between bg-ink/[0.04] px-2 py-1">
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-ink truncate">
+          {sep.label}
+        </span>
+        <span
+          className={
+            "h-4 w-4 rounded-sm border flex items-center justify-center flex-none " +
+            (selected
+              ? "border-accent-500 bg-accent-500 text-white"
+              : "border-ink/30 bg-white")
+          }
+        >
+          {selected && (
+            <svg viewBox="0 0 12 12" className="h-3 w-3" fill="currentColor">
+              <path d="M10.4 3.6L5 9 1.6 5.6l1.4-1.4L5 6.2l4-4z" />
+            </svg>
+          )}
+        </span>
+      </div>
+      <div className="bg-white aspect-[4/3] flex items-center justify-center overflow-hidden">
+        {sep.previewDataUrl ? (
+          <img
+            src={sep.previewDataUrl}
+            alt={sep.label + " separation"}
+            className="block max-w-full max-h-full object-contain"
+          />
+        ) : (
+          <div className="text-center px-2 py-3">
+            <div className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider">
+              Spot
+            </div>
+            <div className="text-xs text-ink mt-1 break-words">{sep.label}</div>
+          </div>
+        )}
+      </div>
+    </button>
   );
 }
 
