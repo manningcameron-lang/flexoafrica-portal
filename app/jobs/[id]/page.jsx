@@ -134,6 +134,9 @@ export default function JobDetailPage() {
 
         {/* Right column: details, files, etc. */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Artwork preview (from the Cloud Function PDF analysis) */}
+          <ArtworkPreviewCard job={job} />
+
           {/* Plate spec */}
           <DetailCard title="Plate spec">
             <DetailGrid>
@@ -265,6 +268,58 @@ export default function JobDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ArtworkPreviewCard({ job }) {
+  // Only render the card if a PDF was uploaded — no point showing an empty
+  // preview slot when the customer didn't supply artwork.
+  const hasPdf = job.pdfUrls && job.pdfUrls.length > 0;
+  if (!hasPdf) return null;
+
+  const status = job.analysisStatus || "received";
+  const previewUrl = job.previewUrl;
+
+  return (
+    <DetailCard title="Artwork preview">
+      {status === "complete" && previewUrl ? (
+        <div>
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block"
+          >
+            <img
+              src={previewUrl}
+              alt={`Composite preview for ${job.jobName}`}
+              className="w-full max-h-[480px] object-contain rounded-md border border-ink/10 bg-white"
+            />
+          </a>
+          <p className="mt-2 text-xs text-ink-muted text-center">
+            Composite preview from your uploaded PDF. Click to view full size.
+          </p>
+        </div>
+      ) : status === "failed" ? (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md p-3">
+          We couldn't generate a preview from this PDF. Our team will check
+          the artwork and follow up.
+          {job.analysisError && (
+            <div className="mt-1 text-xs text-red-600 font-mono break-all">
+              {job.analysisError}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 text-sm text-ink-muted py-4">
+          <span
+            className="inline-block h-4 w-4 border-2 border-current border-r-transparent rounded-full animate-spin"
+            role="status"
+          />
+          Generating composite preview...
+        </div>
+      )}
+    </DetailCard>
   );
 }
 
