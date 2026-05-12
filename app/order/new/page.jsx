@@ -289,7 +289,7 @@ export default function NewOrderPage() {
 
           {/* STEP 1: Configure plate */}
           <div>
-            <StepHeader number="1" title="Select your flexographic plate" />
+            <StepHeader number="1" title="Select your print specifications" />
 
             {lineItems.map((li, idx) => (
               <PlateCard
@@ -517,68 +517,27 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
 
   return (
     <div className="bg-white rounded-xl border border-ink/10 shadow-card mb-4">
-      {/* Plate header */}
-      <div className="px-6 py-4 border-b border-ink/10 flex items-center justify-between">
-        <div className="text-sm font-semibold text-ink uppercase tracking-wider">
-          Plate {idx + 1}
-          {selectedType && (
-            <span className="ml-2 normal-case text-xs font-normal text-ink-muted">
-              · {selectedType.name}
-            </span>
-          )}
-        </div>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="text-xs text-accent-600 hover:text-accent-700 font-medium"
-          >
-            Remove plate
-          </button>
-        )}
+      {/* Header: customer's job description. Becomes part of the job record
+          after our team assigns the FA job ticket number. */}
+      <div className="px-6 py-4 border-b border-ink/10">
+        <label className="block">
+          <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+            Job description
+          </span>
+          <input
+            type="text"
+            value={lineItem.description}
+            onChange={(e) => onChange("description", e.target.value)}
+            placeholder="e.g. Irfaan Bemaths Super Meals - 50g packs"
+            className="mt-1 block w-full rounded-md border border-ink/10 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+          />
+          <span className="mt-1 block text-[11px] text-ink-muted">
+            Your name for this job. It sits alongside the FA job ticket number once we receive your order.
+          </span>
+        </label>
       </div>
 
       <div className="p-6 space-y-6">
-        {/* PDF upload — FIRST so we can analyse and pre-fill before the
-            customer fills in the rest of the form. */}
-        <div>
-          <div className="text-sm font-semibold text-ink mb-2">
-            Upload your artwork PDF <span className="text-accent-500">*</span>
-          </div>
-          <PdfDropzone
-            file={lineItem.pdfFile}
-            onChange={handlePdfDrop}
-          />
-          {/* Inline analysis report + separations + checkboxes */}
-          <PdfAnalysisReport
-            analysis={lineItem.pdfAnalysis}
-            selectedColors={lineItem.selectedColors}
-            onToggleColor={toggleColor}
-            platesFromColors={platesFromColors}
-          />
-        </div>
-
-        {/* Job description — customer's own reference for this job */}
-        {lineItem.pdfFile && (
-          <div>
-            <label className="block">
-              <span className="text-sm font-semibold text-ink">
-                Your job description
-              </span>
-              <span className="ml-2 text-xs font-normal text-ink-muted">
-                Your reference for this plate (we keep it on the job record)
-              </span>
-              <input
-                type="text"
-                value={lineItem.description}
-                onChange={(e) => onChange("description", e.target.value)}
-                placeholder="e.g. Irfaan Bemaths Super Meals - 50g packs"
-                className="mt-2 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
-              />
-            </label>
-          </div>
-        )}
-
         {/* Substrate visual selector */}
         <div>
           <div className="text-sm font-semibold text-ink mb-3">
@@ -707,6 +666,25 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
               />
             </label>
           </div>
+        </div>
+
+        {/* PDF upload — placed AFTER press setup, BEFORE print dimensions, so
+            the analysis can auto-fill the width/length below. */}
+        <div>
+          <div className="text-sm font-semibold text-ink mb-2">
+            Upload your artwork PDF <span className="text-accent-500">*</span>
+          </div>
+          <PdfDropzone
+            file={lineItem.pdfFile}
+            onChange={handlePdfDrop}
+          />
+          {/* Inline analysis report + separations + checkboxes */}
+          <PdfAnalysisReport
+            analysis={lineItem.pdfAnalysis}
+            selectedColors={lineItem.selectedColors}
+            onToggleColor={toggleColor}
+            platesFromColors={platesFromColors}
+          />
         </div>
 
         {/* Dimensions */}
