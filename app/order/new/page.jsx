@@ -16,6 +16,7 @@ import {
 } from "@/lib/plate-types";
 import { calcPrice, formatZAR } from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
+import { analyzePdfClient } from "@/lib/pdf-analyzer";
 
 function newLineItem() {
   return {
@@ -31,6 +32,11 @@ function newLineItem() {
     qty: 1,
     specialInstructions: "",
     pdfFile: null,
+    // pdfAnalysis: null = no file dropped yet
+    // pdfAnalysis: { loading: true } = analysis in progress
+    // pdfAnalysis: { ok: true, widthCm, heightCm, pageCount, warnings: [] }
+    // pdfAnalysis: { ok: false, error: "..." }
+    pdfAnalysis: null,
   };
 }
 
@@ -103,9 +109,18 @@ export default function NewOrderPage() {
   const vat = beforeVat * (VAT_PERCENT / 100);
   const total = beforeVat + vat;
 
-  function updateLineItem(idx, field, value) {
+  // Accepts either:
+  //   updateLineItem(idx, "fieldName", value)   — single field
+  //   updateLineItem(idx, { a: 1, b: 2 })       — batch update (object patch)
+  function updateLineItem(idx, fieldOrPatch, value) {
     setLineItems((items) =>
-      items.map((li, i) => (i === idx ? { ...li, [field]: value } : li))
+      items.map((li, i) => {
+        if (i !== idx) return li;
+        if (fieldOrPatch && typeof fieldOrPatch === "object") {
+          return { ...li, ...fieldOrPatch };
+        }
+        return { ...li, [fieldOrPatch]: value };
+      })
     );
   }
   function addLineItem() {
@@ -259,7 +274,7 @@ export default function NewOrderPage() {
                 lineItem={li}
                 price={lineItemPrices[idx]}
                 canRemove={lineItems.length > 1}
-                onChange={(field, value) => updateLineItem(idx, field, value)}
+                onChange={(fieldOrPatch, value) => updateLineItem(idx, fieldOrPatch, value)}
                 onRemove={() => removeLineItem(idx)}
               />
             ))}
@@ -392,6 +407,39 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
   );
   const selectedType = PLATE_TYPES.find((t) => t.id === lineItem.plateTypeId);
 
+  // Drop a PDF: kick off analysis, then auto-fill width / length from the
+  // PDF page dimensions. Batched so all changes hit state in one update.
+  async function handlePdfDrop(file) {
+    if (!file) {
+      onChange({ pdfFile: null, pdfAnalysis: null });
+      return;
+    }
+    onChange({ pdfFile: file, pdfAnalysis: { loading: true } });
+    try {
+      const result = await analyzePdfClient(file);
+      const patch = { pdfAnalysis: result };
+      // Only auto-fill the dimensions when analysis succeeded AND the user
+      // hasn't already entered something. Don't trample their input.
+      if (result.ok) {
+        if (!lineItem.widthCm || lineItem.widthCm === "") {
+          patch.widthCm = String(result.widthCm);
+        }
+        if (!lineItem.heightCm || lineItem.heightCm === "") {
+          patch.heightCm = String(result.heightCm);
+        }
+      }
+      onChange(patch);
+    } catch (err) {
+      onChange({
+        pdfAnalysis: {
+          ok: false,
+          error: err?.message || "Could not analyse PDF",
+          warnings: [],
+        },
+      });
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl border border-ink/10 shadow-card mb-4">
       {/* Plate header */}
@@ -416,6 +464,20 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
       </div>
 
       <div className="p-6 space-y-6">
+        {/* PDF upload — FIRST so we can analyse and pre-fill before the
+            customer fills in the rest of the form. */}
+        <div>
+          <div className="text-sm font-semibold text-ink mb-2">
+            Upload your artwork PDF <span className="text-accent-500">*</span>
+          </div>
+          <PdfDropzone
+            file={lineItem.pdfFile}
+            onChange={handlePdfDrop}
+          />
+          {/* Inline analysis report */}
+          <PdfAnalysisReport analysis={lineItem.pdfAnalysis} />
+        </div>
+
         {/* Substrate visual selector */}
         <div>
           <div className="text-sm font-semibold text-ink mb-3">
@@ -612,17 +674,6 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
               Line total: <span className="font-semibold text-ink">{formatZAR(price.subtotal)}</span>
             </p>
           )}
-        </div>
-
-        {/* PDF upload */}
-        <div>
-          <div className="text-sm font-semibold text-ink mb-2">
-            Upload your artwork PDF <span className="text-accent-500">*</span>
-          </div>
-          <PdfDropzone
-            file={lineItem.pdfFile}
-            onChange={(file) => onChange("pdfFile", file)}
-          />
         </div>
 
         {/* Special instructions */}
@@ -921,13 +972,91 @@ function PdfDropzone({ file, onChange }) {
                 Drop your PDF here, or click to choose
               </div>
               <div className="text-xs text-ink-muted mt-1">
-                Print-ready PDF preferred · Max 50 MB
+                Final Esko or normalised PDF, ready for platemaking · Max 50 MB
               </div>
             </div>
           )}
         </div>
       </div>
     </label>
+  );
+}
+
+// ─── PDF analysis report (shown inline after a PDF is dropped) ────────────
+
+function PdfAnalysisReport({ analysis }) {
+  if (!analysis) return null;
+
+  // Loading state — show while pdfjs is parsing.
+  if (analysis.loading) {
+    return (
+      <div className="mt-3 rounded-md border border-ink/10 bg-ink/[0.02] px-4 py-3 flex items-center gap-3 text-sm text-ink-muted">
+        <span
+          className="inline-block h-4 w-4 border-2 border-current border-r-transparent rounded-full animate-spin"
+          role="status"
+          aria-label="Analysing"
+        />
+        Checking your PDF...
+      </div>
+    );
+  }
+
+  // Error / not OK
+  if (!analysis.ok) {
+    return (
+      <div className="mt-3 rounded-md border border-accent-500/40 bg-accent-50 px-4 py-3 text-sm text-accent-700">
+        <span className="font-semibold">Could not analyse this PDF.</span>{" "}
+        {analysis.error || "We will still upload it for our team to check."}
+      </div>
+    );
+  }
+
+  const hasWarnings = analysis.warnings && analysis.warnings.length > 0;
+  const headlineColor = hasWarnings
+    ? "border-amber-200 bg-amber-50"
+    : "border-green-200 bg-green-50";
+  const headlineDot = hasWarnings ? "bg-amber-500" : "bg-green-500";
+
+  return (
+    <div className={"mt-3 rounded-md border px-4 py-3 text-sm " + headlineColor}>
+      <div className="flex items-start gap-3">
+        <span
+          className={"mt-1 inline-block h-2 w-2 rounded-full flex-none " + headlineDot}
+        />
+        <div className="flex-1">
+          <div className="font-semibold text-ink">
+            Page 1: {analysis.widthCm} × {analysis.heightCm} cm
+            <span className="ml-2 text-xs font-normal text-ink-muted">
+              ({analysis.widthMm.toFixed(0)} × {analysis.heightMm.toFixed(0)} mm)
+            </span>
+          </div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            {analysis.pageCount} {analysis.pageCount === 1 ? "page" : "pages"}{" "}
+            · {analysis.fileSizeMb} MB · Print width and length auto-filled below
+          </div>
+
+          {hasWarnings && (
+            <ul className="mt-2 space-y-1">
+              {analysis.warnings.map((w, i) => (
+                <li
+                  key={i}
+                  className={
+                    "text-xs " +
+                    (w.level === "error"
+                      ? "text-red-700"
+                      : w.level === "warning"
+                      ? "text-amber-800"
+                      : "text-ink-muted")
+                  }
+                >
+                  • {w.message}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
