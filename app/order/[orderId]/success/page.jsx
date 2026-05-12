@@ -127,9 +127,9 @@ export default function OrderSuccessPage() {
             {order.orderNumber}
           </h1>
           <p className="mt-3 text-brand-700">
-            Your order is in our queue. Our repro team will prepare your
-            artwork and email you a proof for approval. You can track every
-            stage in your dashboard.
+            Your order is in our queue. We make plates directly from your
+            uploaded PDF and ship them to you. Track every stage in your
+            dashboard.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
             <Link
@@ -347,3 +347,4 @@ function Detail({ label, value }) {
     </div>
   );
 }
+
