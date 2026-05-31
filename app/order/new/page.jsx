@@ -15,9 +15,18 @@ import {
   DELIVERY_METHOD_OPTIONS,
   VAT_PERCENT,
 } from "@/lib/plate-types";
-import { calcPrice, calcOrderTotals, formatZAR } from "@/lib/pricing";
+import {
+  calcPrice,
+  calcPricePerPlate,
+  calcOrderTotals,
+  formatZAR,
+} from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
 import { analyzePdfClient } from "@/lib/pdf-analyzer";
+import {
+  subscribeCustomerRates,
+  resolveCustomerRate,
+} from "@/lib/customer-rates";
 
 function newLineItem() {
   return {
@@ -32,8 +41,10 @@ function newLineItem() {
     heightCm: "",
     qty: 1,
     specialInstructions: "",
-    // Customer's own name / reference for this job (free text).
+    // Customer's own name / reference for this job (free text, compulsory).
     description: "",
+    // Optional customer item code / their internal job number.
+    itemCode: "",
     pdfFile: null,
     pdfAnalysis: null,
     // Map of separation key -> boolean. Populated when a PDF is dropped;
@@ -88,6 +99,25 @@ export default function NewOrderPage() {
     }
   }, [profile]); // eslint-disable-line
 
+  // ----- customer rate (loaded from MIS settings/customers) -----
+  // Subscribes once on mount, kept up to date by listener. Matched against
+  // the customer's `company` field exactly. Falls back to placeholder.
+  const [customerRateMaps, setCustomerRateMaps] = useState({
+    rates: {},
+    repeats: {},
+  });
+  useEffect(() => {
+    if (!user) return;
+    const unsub = subscribeCustomerRates(setCustomerRateMaps);
+    return unsub;
+  }, [user]);
+
+  const customerRateInfo = useMemo(
+    () => resolveCustomerRate(profile?.company || "", customerRateMaps, false),
+    [profile?.company, customerRateMaps],
+  );
+  const ratePerCm2 = customerRateInfo.rate;
+
   // ----- pricing -----
   // Plate quantity = number of ticked separations (one plate per colour).
   // Falls back to 1 if nothing ticked yet so the form still renders something.
@@ -97,21 +127,68 @@ export default function NewOrderPage() {
     return ticked || 1;
   }
 
+  // Build the per-plate input for a line item from its ticked separations.
+  // Each ticked separation produces one plate, sized to the analyser bbox if
+  // we have one for that key, otherwise falling back to the page dimensions.
+  function platesFromLineItem(li) {
+    const sel = li.selectedColors || {};
+    const seps = li.pdfAnalysis?.separations || [];
+    const tickedKeys = Object.keys(sel).filter((k) => sel[k]);
+    if (tickedKeys.length === 0) {
+      // Fallback when no colours ticked yet — show one plate using page dims.
+      return [
+        {
+          bboxWidthCm: Number(li.widthCm) || 0,
+          bboxHeightCm: Number(li.heightCm) || 0,
+        },
+      ];
+    }
+    return tickedKeys.map((k) => {
+      const sep = seps.find((s) => s.key === k);
+      if (sep && sep.bboxWidthCm && sep.bboxHeightCm) {
+        return {
+          bboxWidthCm: sep.bboxWidthCm,
+          bboxHeightCm: sep.bboxHeightCm,
+        };
+      }
+      // No precise bbox — use page dims as fallback.
+      return {
+        bboxWidthCm: Number(li.widthCm) || 0,
+        bboxHeightCm: Number(li.heightCm) || 0,
+      };
+    });
+  }
+
   const tierInfo = TURNAROUND_TIERS.find((t) => t.id === turnaroundTier) || TURNAROUND_TIERS[0];
   const upliftPct = tierInfo.upliftPct || 0;
   const isExpress = upliftPct > 0;
 
   const lineItemPrices = useMemo(
     () =>
-      lineItems.map((li) =>
-        calcPrice({
+      lineItems.map((li) => {
+        // Per-plate pricing when we have separation data with bboxes (precise
+        // mode from the cloud analyser). Otherwise fall back to page-level
+        // dimensions x qty (the old approximate path).
+        const plates = platesFromLineItem(li);
+        const hasPerPlateDims = plates.some(
+          (p) => p.bboxWidthCm > 0 && p.bboxHeightCm > 0,
+        );
+        if (hasPerPlateDims) {
+          return calcPricePerPlate({
+            plates,
+            isExpress,
+            ratePerCm2,
+          });
+        }
+        return calcPrice({
           widthCm: li.widthCm,
           heightCm: li.heightCm,
           qty: platesForLineItem(li),
           isExpress,
-        })
-      ),
-    [lineItems, isExpress]
+          ratePerCm2,
+        });
+      }),
+    [lineItems, isExpress, ratePerCm2]
   );
 
   const orderTotals = useMemo(
@@ -155,14 +232,18 @@ export default function NewOrderPage() {
     for (let i = 0; i < lineItems.length; i++) {
       const li = lineItems[i];
       const idx = i + 1;
+      if (!li.description || !li.description.trim())
+        return `Plate ${idx}: add a job description.`;
       if (!li.substrate) return `Plate ${idx}: choose a substrate.`;
       if (!li.plateTier) return `Plate ${idx}: choose a tier.`;
       if (!li.plateTypeId) return `Plate ${idx}: choose a thickness.`;
       if (!li.inkType) return `Plate ${idx}: choose an ink type.`;
       if (!li.printSide) return `Plate ${idx}: choose surface or reverse print.`;
+      if (!li.screenRuling) return `Plate ${idx}: pick a screen ruling.`;
+      if (!li.cylinderSize || !li.cylinderSize.trim())
+        return `Plate ${idx}: enter the cylinder / tooth size.`;
       if (!(Number(li.widthCm) > 0)) return `Plate ${idx}: enter width.`;
       if (!(Number(li.heightCm) > 0)) return `Plate ${idx}: enter height.`;
-      if (!(Number(li.qty) > 0)) return `Plate ${idx}: enter quantity.`;
       if (!li.pdfFile) return `Plate ${idx}: upload your artwork PDF.`;
     }
     return null;
@@ -517,22 +598,40 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
 
   return (
     <div className="bg-white rounded-xl border border-ink/10 shadow-card mb-4">
-      {/* Header: customer's job description. Becomes part of the job record
-          after our team assigns the FA job ticket number. */}
-      <div className="px-6 py-4 border-b border-ink/10">
+      {/* Header: customer's job description + item code. Both sit alongside
+          the FA job ticket number once we receive the order. */}
+      <div className="px-6 py-4 border-b border-ink/10 space-y-3">
         <label className="block">
           <span className="text-xs font-semibold text-ink uppercase tracking-wider">
-            Job description
+            Job description <span className="text-accent-500">*</span>
           </span>
           <input
             type="text"
             value={lineItem.description}
             onChange={(e) => onChange("description", e.target.value)}
-            placeholder="e.g. Irfaan Bemaths Super Meals - 50g packs"
+            placeholder="e.g. Cereal box - 500g - front panel"
+            required
             className="mt-1 block w-full rounded-md border border-ink/10 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
           />
           <span className="mt-1 block text-[11px] text-ink-muted">
             Your name for this job. It sits alongside the FA job ticket number once we receive your order.
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+            Item code / Job number
+            <span className="ml-2 text-[10px] font-normal text-ink-muted normal-case">(optional)</span>
+          </span>
+          <input
+            type="text"
+            value={lineItem.itemCode}
+            onChange={(e) => onChange("itemCode", e.target.value)}
+            placeholder="e.g. ITM-2410, PO-887, your internal job number"
+            className="mt-1 block w-full rounded-md border border-ink/10 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
+          />
+          <span className="mt-1 block text-[11px] text-ink-muted">
+            Your internal reference. We carry it through onto our paperwork.
           </span>
         </label>
       </div>
@@ -634,20 +733,23 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
           </div>
         </div>
 
-        {/* Screen ruling + cylinder size */}
+        {/* Screen ruling + cylinder size — both compulsory */}
         <div>
           <div className="text-sm font-semibold text-ink mb-2">
-            Press setup
+            Press setup <span className="text-accent-500">*</span>
           </div>
           <div className="grid sm:grid-cols-2 gap-3">
             <label className="block">
-              <span className="text-xs text-ink-muted">Screen ruling (LPI)</span>
+              <span className="text-xs text-ink-muted">
+                Screen ruling (LPI) <span className="text-accent-500">*</span>
+              </span>
               <select
                 value={lineItem.screenRuling || ""}
                 onChange={(e) => onChange("screenRuling", e.target.value)}
+                required
                 className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
               >
-                <option value="">Select ruling (optional)</option>
+                <option value="">Select ruling</option>
                 {SCREEN_RULING_OPTIONS.map((r) => (
                   <option key={r} value={r}>
                     {r}
@@ -656,12 +758,15 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
               </select>
             </label>
             <label className="block">
-              <span className="text-xs text-ink-muted">Cylinder / tooth size</span>
+              <span className="text-xs text-ink-muted">
+                Cylinder / tooth size <span className="text-accent-500">*</span>
+              </span>
               <input
                 type="text"
                 value={lineItem.cylinderSize || ""}
                 onChange={(e) => onChange("cylinderSize", e.target.value)}
                 placeholder="e.g. 120 teeth or 508mm"
+                required
                 className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
               />
             </label>
@@ -1268,6 +1373,21 @@ function SeparationTile({ sep, selected, onToggle }) {
           </div>
         )}
       </div>
+      {/* Per-plate dimensions readout. Shows only when the analyser returned a
+          real bbox for this separation — otherwise we'd be quoting the page
+          size for every plate, which is misleading. */}
+      {Number(sep.bboxWidthCm) > 0 && Number(sep.bboxHeightCm) > 0 && (
+        <div className="bg-ink/[0.02] px-2 py-1 text-[10px] text-ink-muted border-t border-ink/5 flex items-center justify-between">
+          <span>
+            {Number(sep.bboxWidthCm).toFixed(1)} × {Number(sep.bboxHeightCm).toFixed(1)} cm
+          </span>
+          {Number(sep.coveragePct) > 0 && (
+            <span className="text-ink-muted/80">
+              {Number(sep.coveragePct).toFixed(1)}%
+            </span>
+          )}
+        </div>
+      )}
     </button>
   );
 }

@@ -1,8 +1,13 @@
 import Link from "next/link";
+import RedirectIfSignedIn from "@/components/RedirectIfSignedIn";
 
 export default function HomePage() {
   return (
     <>
+      {/* Bounce signed-in customers straight to their dashboard. Operators
+          and admins land in the MIS. No effect on signed-out visitors. */}
+      <RedirectIfSignedIn />
+
       {/* Hero */}
       <section className="bg-gradient-to-br from-brand-50 via-white to-brand-100 border-b border-brand-100">
         <div className="max-w-page mx-auto px-4 sm:px-6 py-16 md:py-24 grid md:grid-cols-2 gap-10 items-center">
