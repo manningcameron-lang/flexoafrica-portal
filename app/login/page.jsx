@@ -14,12 +14,12 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const [email, setEmail] = useState("");
+  const params = useSearchParams();
+  const [email, setEmail] = useState(params.get("email") || "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
-  const params = useSearchParams();
   const initialError = params.get("error");
 
   async function handleSubmit(e) {
