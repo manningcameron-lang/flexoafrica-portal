@@ -321,9 +321,6 @@ export default function NewOrderPage() {
                 className="block w-full h-full object-cover"
               />
             </div>
-            <div className="px-3 py-2 text-[10px] text-ink-muted text-right italic">
-              (image for reference)
-            </div>
           </div>
 
           {/* Trust badges */}

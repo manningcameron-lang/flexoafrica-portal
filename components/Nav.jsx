@@ -10,6 +10,14 @@ const customerNav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/jobs", label: "My Jobs" },
   { href: "/order/new", label: "Place Order" },
+  // External: prepress tools sub-app at tools.flexoafrica.com. Opens in a
+  // new tab so the portal session stays put. The `from=portal` + email
+  // hints let the tools site recognise an authenticated portal user.
+  {
+    href: "https://tools.flexoafrica.com",
+    label: "Tools",
+    external: true,
+  },
   { href: "/profile", label: "Profile" },
 ];
 
@@ -44,16 +52,30 @@ export default function Nav() {
         <nav className="hidden md:flex items-center gap-6 text-sm">
           {nav.map((item) => {
             const active = pathname === item.href || pathname?.startsWith(item.href + "/");
+            const baseCls = active
+              ? "text-ink font-semibold"
+              : "text-ink-muted hover:text-ink transition-colors";
+            if (item.external) {
+              // Tag URL with from=portal + email so tools.flexoafrica.com
+              // can recognise a signed-in portal user. Email is appended
+              // only when we have one.
+              const url = new URL(item.href);
+              url.searchParams.set("from", "portal");
+              if (user?.email) url.searchParams.set("email", user.email);
+              return (
+                <a
+                  key={item.href}
+                  href={url.toString()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={baseCls}
+                >
+                  {item.label}
+                </a>
+              );
+            }
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={
-                  active
-                    ? "text-ink font-semibold"
-                    : "text-ink-muted hover:text-ink transition-colors"
-                }
-              >
+              <Link key={item.href} href={item.href} className={baseCls}>
                 {item.label}
               </Link>
             );
@@ -109,16 +131,35 @@ export default function Nav() {
       {open && (
         <div className="md:hidden border-t border-ink/10 bg-white">
           <div className="max-w-page mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3">
-            {nav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="text-sm text-ink py-1"
-                onClick={() => setOpen(false)}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {nav.map((item) => {
+              if (item.external) {
+                const url = new URL(item.href);
+                url.searchParams.set("from", "portal");
+                if (user?.email) url.searchParams.set("email", user.email);
+                return (
+                  <a
+                    key={item.href}
+                    href={url.toString()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-ink py-1"
+                    onClick={() => setOpen(false)}
+                  >
+                    {item.label}
+                  </a>
+                );
+              }
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="text-sm text-ink py-1"
+                  onClick={() => setOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             <div className="border-t border-ink/10 pt-3 flex flex-col gap-2">
               {isSignedIn ? (
                 <button
