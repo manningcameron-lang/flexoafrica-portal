@@ -10,16 +10,35 @@ const customerNav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/jobs", label: "My Jobs" },
   { href: "/order/new", label: "Place Order" },
-  // External: prepress tools sub-app at tools.flexoafrica.com. Opens in a
-  // new tab so the portal session stays put. The `from=portal` + email
-  // hints let the tools site recognise an authenticated portal user.
+  // External: prepress tools sub-app at tools.flexoafrica.com.
+  // `sso: true` flips the renderer into "fetch Firebase ID token, redirect
+  // to /sso-login.html#firebaseToken=..." mode so the user lands signed in.
   {
     href: "https://tools.flexoafrica.com",
     label: "Tools",
     external: true,
+    sso: true,
   },
   { href: "/profile", label: "Profile" },
 ];
+
+// Open tools.flexoafrica.com signed in. Fetches the current Firebase ID
+// token and passes it via URL hash to the tools SSO bridge page. Falls
+// back to the plain login page if token retrieval fails for any reason.
+async function openToolsWithSso(user) {
+  const root = "https://tools.flexoafrica.com";
+  try {
+    if (!user) throw new Error("no user");
+    const idToken = await user.getIdToken();
+    window.open(
+      `${root}/sso-login.html#firebaseToken=${encodeURIComponent(idToken)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  } catch {
+    window.open(root, "_blank", "noopener,noreferrer");
+  }
+}
 
 const publicNav = [
   { href: "/services", label: "Services" },
@@ -55,17 +74,31 @@ export default function Nav() {
             const baseCls = active
               ? "text-ink font-semibold"
               : "text-ink-muted hover:text-ink transition-colors";
-            if (item.external) {
-              // Tag URL with from=portal + email so tools.flexoafrica.com
-              // can recognise a signed-in portal user. Email is appended
-              // only when we have one.
-              const url = new URL(item.href);
-              url.searchParams.set("from", "portal");
-              if (user?.email) url.searchParams.set("email", user.email);
+            if (item.external && item.sso) {
+              // SSO flow — preventDefault and fetch the Firebase ID token
+              // before opening tools. href is kept as a graceful fallback
+              // for keyboard / "open in new tab" middle-clicks.
               return (
                 <a
                   key={item.href}
-                  href={url.toString()}
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={baseCls}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openToolsWithSso(user);
+                  }}
+                >
+                  {item.label}
+                </a>
+              );
+            }
+            if (item.external) {
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={baseCls}
@@ -132,14 +165,29 @@ export default function Nav() {
         <div className="md:hidden border-t border-ink/10 bg-white">
           <div className="max-w-page mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3">
             {nav.map((item) => {
-              if (item.external) {
-                const url = new URL(item.href);
-                url.searchParams.set("from", "portal");
-                if (user?.email) url.searchParams.set("email", user.email);
+              if (item.external && item.sso) {
                 return (
                   <a
                     key={item.href}
-                    href={url.toString()}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-ink py-1"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setOpen(false);
+                      openToolsWithSso(user);
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              }
+              if (item.external) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-ink py-1"
