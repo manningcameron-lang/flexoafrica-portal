@@ -310,10 +310,16 @@ export default function NewOrderPage() {
       >
         {/* ----- LEFT SIDEBAR ----- */}
         <aside className="space-y-6 lg:sticky lg:top-20">
-          {/* Reference image */}
+          {/* Reference image — flexo press photo, contextual hint of what
+              the customer's plates run on. Easy to swap to a different
+              asset by changing the src path. */}
           <div className="rounded-xl overflow-hidden border border-ink/10 bg-white">
-            <div className="aspect-square bg-gradient-to-br from-accent-50 via-white to-brand-50 flex items-center justify-center">
-              <PlateIllustration />
+            <div className="aspect-square bg-brand-50">
+              <img
+                src="/hero.jpg"
+                alt="Flexographic press with photopolymer plates mounted"
+                className="block w-full h-full object-cover"
+              />
             </div>
             <div className="px-3 py-2 text-[10px] text-ink-muted text-right italic">
               (image for reference)
@@ -1373,19 +1379,25 @@ function SeparationTile({ sep, selected, onToggle }) {
           </div>
         )}
       </div>
-      {/* Per-plate dimensions readout. Shows only when the analyser returned a
-          real bbox for this separation — otherwise we'd be quoting the page
-          size for every plate, which is misleading. */}
+      {/* Per-plate dimensions readout. Shows the BILLED plate size (ink bbox
+          + 4cm Polyflex trim — 2cm each side). That's the actual plate Cam
+          mounts and what the customer is charged for, so showing the raw
+          bbox would mismatch the price. */}
       {Number(sep.bboxWidthCm) > 0 && Number(sep.bboxHeightCm) > 0 && (
-        <div className="bg-ink/[0.02] px-2 py-1 text-[10px] text-ink-muted border-t border-ink/5 flex items-center justify-between">
-          <span>
-            {Number(sep.bboxWidthCm).toFixed(1)} × {Number(sep.bboxHeightCm).toFixed(1)} cm
-          </span>
-          {Number(sep.coveragePct) > 0 && (
-            <span className="text-ink-muted/80">
-              {Number(sep.coveragePct).toFixed(1)}%
+        <div className="bg-ink/[0.02] px-2 py-1 text-[10px] text-ink-muted border-t border-ink/5">
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-ink">
+              {(Number(sep.bboxWidthCm) + 4).toFixed(1)} × {(Number(sep.bboxHeightCm) + 4).toFixed(1)} cm
             </span>
-          )}
+            {Number(sep.coveragePct) > 0 && (
+              <span className="text-ink-muted/80">
+                {Number(sep.coveragePct).toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <div className="text-[9px] text-ink-muted/70 mt-0.5">
+            plate · incl. 4cm trim
+          </div>
         </div>
       )}
     </button>
