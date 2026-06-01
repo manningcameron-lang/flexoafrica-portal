@@ -22,22 +22,70 @@ const customerNav = [
   { href: "/profile", label: "Profile" },
 ];
 
-// Open tools.flexoafrica.com signed in. Fetches the current Firebase ID
-// token and passes it via URL hash to the tools SSO bridge page. Falls
-// back to the plain login page if token retrieval fails for any reason.
+// Open tools.flexoafrica.com signed in.
+//
+// IMPORTANT: tokens MUST NOT appear in the URL. Chrome Safe Browsing flags
+// any URL with a long base64 payload that looks like a credential — even
+// in the hash fragment that browsers don't send to the server. Lesson
+// learned 2026-06-01.
+//
+// The handshake is:
+//   1. Portal opens tools.flexoafrica.com/sso-login.html (clean URL)
+//   2. Bridge page sends `window.opener.postMessage({ type: 'request-sso' })`
+//      back to the portal origin
+//   3. Portal listener verifies the message origin === tools.flexoafrica.com,
+//      fetches user.getIdToken(), and posts back the token via
+//      event.source.postMessage to the tools origin
+//   4. Bridge page POSTs the token to /api/auth/sso-portal, stores fa_token,
+//      redirects to /
+//
+// We DO use the "noopener" attribute despite needing window.opener — that
+// attribute would set opener to null and break the handshake. We rely on
+// strict origin checks on every postMessage instead. The new tab can't read
+// anything from the opener without an explicit response, and the response
+// only flows to the verified tools origin.
 async function openToolsWithSso(user) {
-  const root = "https://tools.flexoafrica.com";
-  try {
-    if (!user) throw new Error("no user");
-    const idToken = await user.getIdToken();
-    window.open(
-      `${root}/sso-login.html#firebaseToken=${encodeURIComponent(idToken)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-  } catch {
-    window.open(root, "_blank", "noopener,noreferrer");
+  const TOOLS_ORIGIN = "https://tools.flexoafrica.com";
+
+  // Open with no token in URL. Use a temporary message listener that lives
+  // only until the handshake is done (or 30s timeout).
+  const bridge = window.open(
+    `${TOOLS_ORIGIN}/sso-login.html`,
+    "_blank",
+    "noreferrer",
+  );
+  if (!bridge) {
+    // Popup blocked — fall back to plain navigation.
+    window.location.href = TOOLS_ORIGIN;
+    return;
   }
+
+  let handled = false;
+  function handle(event) {
+    if (event.origin !== TOOLS_ORIGIN) return;
+    if (handled) return;
+    if (event.data?.type !== "request-sso") return;
+    handled = true;
+    (async () => {
+      let payload;
+      try {
+        if (!user) throw new Error("no user");
+        const idToken = await user.getIdToken();
+        payload = { type: "sso-token", token: idToken };
+      } catch (err) {
+        payload = { type: "sso-error", message: String(err?.message || err) };
+      }
+      try {
+        event.source.postMessage(payload, TOOLS_ORIGIN);
+      } catch {}
+      window.removeEventListener("message", handle);
+    })();
+  }
+  window.addEventListener("message", handle);
+  // Safety net — if the bridge never asks, clean up after 30s.
+  setTimeout(() => {
+    if (!handled) window.removeEventListener("message", handle);
+  }, 30000);
 }
 
 const publicNav = [
