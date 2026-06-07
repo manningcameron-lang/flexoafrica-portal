@@ -1,9 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Script from "next/script";
 import { signUpCustomer } from "@/lib/auth";
+
+// Cloudflare Turnstile site key — public, safe to expose. Set in Vercel env.
+// When empty (e.g. local dev or before Cloudflare is configured) the widget
+// is skipped and the captcha gate gracefully degrades to "ok" on the server.
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
 export default function SignupPage() {
   const [form, setForm] = useState({
@@ -15,7 +22,34 @@ export default function SignupPage() {
   });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const widgetRef = useRef(null);
+  const widgetIdRef = useRef(null);
   const router = useRouter();
+
+  // Render the Turnstile widget once the global `turnstile` object is ready.
+  // The widget calls onCaptchaSuccess with the token; we stash it in state
+  // and pass it to signUpCustomer on submit.
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return; // captcha disabled; no widget
+    let cancelled = false;
+    const tryRender = () => {
+      if (cancelled) return;
+      if (!window.turnstile || !widgetRef.current) {
+        return setTimeout(tryRender, 200);
+      }
+      // Don't double-render if hot reload re-runs the effect.
+      if (widgetIdRef.current) return;
+      widgetIdRef.current = window.turnstile.render(widgetRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => setCaptchaToken(token),
+        "error-callback": () => setCaptchaToken(""),
+        "expired-callback": () => setCaptchaToken(""),
+      });
+    };
+    tryRender();
+    return () => { cancelled = true; };
+  }, []);
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -24,13 +58,22 @@ export default function SignupPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setError("Please complete the captcha challenge.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await signUpCustomer(form);
+      await signUpCustomer({ ...form, captchaToken });
       router.push("/awaiting-approval");
     } catch (err) {
       setError(prettySignupError(err));
       setSubmitting(false);
+      // Reset captcha so the user can re-challenge after an error.
+      if (widgetIdRef.current && window.turnstile) {
+        try { window.turnstile.reset(widgetIdRef.current); } catch {}
+      }
+      setCaptchaToken("");
     }
   }
 
@@ -84,11 +127,26 @@ export default function SignupPage() {
           hint="At least 8 characters."
         />
 
+        {/* Cloudflare Turnstile widget. Only renders when the site key is
+            configured — otherwise this block stays empty and the captcha
+            gate gracefully degrades on the server. */}
+        {TURNSTILE_SITE_KEY && (
+          <>
+            <Script
+              src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+              strategy="afterInteractive"
+              async
+              defer
+            />
+            <div ref={widgetRef} />
+          </>
+        )}
+
         {error && <Banner>{error}</Banner>}
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (TURNSTILE_SITE_KEY && !captchaToken)}
           className="w-full px-5 py-3 bg-brand-700 hover:bg-brand-800 disabled:opacity-60 text-white font-medium rounded-md"
         >
           {submitting ? "Creating account..." : "Create account"}
@@ -133,6 +191,8 @@ function Banner({ children }) {
 
 function prettySignupError(err) {
   const code = err?.code || "";
+  if (code === "captcha/failed")
+    return "Captcha check failed. Please try again.";
   if (code === "auth/email-already-in-use")
     return "An account with that email already exists. Try signing in.";
   if (code === "auth/weak-password")
