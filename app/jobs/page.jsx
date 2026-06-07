@@ -21,7 +21,7 @@ const FILTERS = [
 ];
 
 export default function MyJobsPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const params = useSearchParams();
   const initial = params.get("filter") || "all";
   const [filter, setFilter] = useState(initial);
@@ -31,9 +31,10 @@ export default function MyJobsPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    // Per-company isolation: subscribe by user.company.
+    if (!user?.uid || !profile?.company) return;
     setLoading(true);
-    const unsub = subscribeJobsForCustomer(user.uid, (items, err) => {
+    const unsub = subscribeJobsForCustomer(profile.company, (items, err) => {
       if (err) {
         setError(err.message || "Failed to load jobs");
         setLoading(false);
@@ -43,7 +44,7 @@ export default function MyJobsPage() {
       setLoading(false);
     });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, profile?.company]);
 
   const filtered = useMemo(() => {
     let out = jobs;

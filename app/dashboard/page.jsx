@@ -13,9 +13,12 @@ export default function DashboardPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    // Per-company isolation: subscribe by the user's company string.
+    // Wait until profile.company is loaded — pre-AuthProvider state can
+    // momentarily flip user.uid to true with profile still null.
+    if (!user?.uid || !profile?.company) return;
     setLoading(true);
-    const unsub = subscribeJobsForCustomer(user.uid, (items, err) => {
+    const unsub = subscribeJobsForCustomer(profile.company, (items, err) => {
       if (err) {
         setError(err.message || "Failed to load jobs");
         setLoading(false);
@@ -25,7 +28,7 @@ export default function DashboardPage() {
       setLoading(false);
     });
     return unsub;
-  }, [user?.uid]);
+  }, [user?.uid, profile?.company]);
 
   const firstName = (profile?.contactName || "").split(" ")[0];
   const buckets = bucketJobs(jobs);
