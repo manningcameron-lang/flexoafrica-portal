@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   collection,
   doc,
-  getDoc,
   onSnapshot,
   query,
   where,
@@ -16,32 +15,35 @@ import { useAuth } from "@/components/AuthProvider";
 
 export default function OrderSuccessPage() {
   const { orderId } = useParams();
+  const searchParams = useSearchParams();
+  const returnedFromPayFast = searchParams.get("paid") === "1";
+
   const { user, profile, loading } = useAuth();
   const [order, setOrder] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [loadErr, setLoadErr] = useState(null);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState(null);
+  const payFormRef = useRef(null);
 
-  // Load the order header once.
+  // LIVE listener on the order (replaces one-shot getDoc so payment status updates live)
   useEffect(() => {
     if (loading || !orderId || !user) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const orderSnap = await getDoc(doc(db, "orders", orderId));
-        if (cancelled) return;
-        if (!orderSnap.exists()) {
+    const unsub = onSnapshot(
+      doc(db, "orders", orderId),
+      (snap) => {
+        if (!snap.exists()) {
           setLoadErr("Order not found.");
           return;
         }
-        setOrder({ id: orderSnap.id, ...orderSnap.data() });
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setLoadErr(err?.message || "Could not load order.");
+        setOrder({ id: snap.id, ...snap.data() });
+      },
+      (err) => {
+        console.error("order listen error", err);
+        setLoadErr(err?.message || "Could not load order.");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    );
+    return unsub;
   }, [orderId, user, loading]);
 
   // LIVE listener on the jobs in this order so the analysis status + preview
@@ -68,6 +70,58 @@ export default function OrderSuccessPage() {
     );
     return unsub;
   }, [orderId, user, loading]);
+
+  async function handlePayNow() {
+    if (!order || paying) return;
+    setPaying(true);
+    setPayError(null);
+
+    try {
+      const nameParts = (profile?.contactName || order.customerName || "").trim().split(" ");
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
+      const res = await fetch("/api/payfast/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          amount: order.orderTotalIncVat,
+          email: user.email || order.customerEmail,
+          firstName,
+          lastName,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Checkout request failed");
+      }
+
+      const { action, fields } = await res.json();
+
+      // Build a hidden form and auto-submit to PayFast
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = action;
+
+      Object.entries(fields).forEach(([name, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      console.error("Pay Now error:", err);
+      setPayError(err.message || "Something went wrong. Please try again.");
+      setPaying(false);
+    }
+  }
 
   if (loading || !user) {
     return (
@@ -113,6 +167,9 @@ export default function OrderSuccessPage() {
     jobs.length > 0 && jobs.every((j) => j.analysisStatus === "complete");
   const anyFailed = jobs.some((j) => j.analysisStatus === "failed");
 
+  const isPaid = order.paymentStatus === "paid";
+  const awaitingConfirmation = returnedFromPayFast && !isPaid;
+
   return (
     <>
       <section className="bg-gradient-to-br from-brand-50 via-white to-brand-100 border-b border-brand-100">
@@ -145,6 +202,70 @@ export default function OrderSuccessPage() {
               Place another order
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* Payment banner */}
+      <section className="border-b border-brand-100">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+          {isPaid ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 p-5 flex items-center gap-4">
+              <span className="text-green-600 text-2xl flex-shrink-0">✓</span>
+              <div>
+                <p className="font-semibold text-green-900">Payment received</p>
+                <p className="text-sm text-green-800 mt-0.5">
+                  Thank you! Your payment has been confirmed. We will start
+                  processing your plates shortly.
+                </p>
+              </div>
+            </div>
+          ) : awaitingConfirmation ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex items-center gap-4">
+              <Spinner className="text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-900">
+                  Confirming your payment...
+                </p>
+                <p className="text-sm text-amber-800 mt-0.5">
+                  This usually takes a few seconds. This page will update
+                  automatically.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-brand-200 bg-white p-5">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <p className="font-semibold text-brand-900">
+                    Payment outstanding
+                  </p>
+                  <p className="text-sm text-brand-600 mt-0.5">
+                    Order total:{" "}
+                    <span className="font-semibold text-brand-900">
+                      R{Number(order.orderTotalIncVat || 0).toFixed(2)} incl. VAT
+                    </span>
+                  </p>
+                  {payError && (
+                    <p className="text-sm text-red-600 mt-1">{payError}</p>
+                  )}
+                </div>
+                <button
+                  onClick={handlePayNow}
+                  disabled={paying}
+                  className="flex items-center gap-2 px-5 py-3 bg-accent-500 hover:bg-accent-600 disabled:opacity-60 text-white font-semibold rounded-md transition-colors"
+                >
+                  {paying ? (
+                    <>
+                      <Spinner />
+                      Redirecting...
+                    </>
+                  ) : (
+                    "Pay Now"
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -330,7 +451,7 @@ function StatusChip({ status, stage }) {
 function Spinner() {
   return (
     <span
-      className="inline-block h-4 w-4 border-2 border-current border-r-transparent rounded-full animate-spin"
+      className="inline-block h-4 w-4 border-2 border-current border-r-transparent rounded-full animate-spin flex-shrink-0"
       role="status"
       aria-label="Loading"
     />
@@ -347,4 +468,3 @@ function Detail({ label, value }) {
     </div>
   );
 }
-
