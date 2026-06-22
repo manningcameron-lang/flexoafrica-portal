@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { adminDb } from "@/lib/firebase-admin";
+import { getAdminDb } from "@/lib/firebase-admin";
 
 const MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID;
 const PASSPHRASE = process.env.PAYFAST_PASSPHRASE;
@@ -94,6 +94,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing order ID" }, { status: 400 });
     }
 
+    const adminDb = getAdminDb();
     await adminDb.collection("orders").doc(orderId).update({
       paymentStatus: "paid",
       pfPaymentId: params.pf_payment_id || null,
