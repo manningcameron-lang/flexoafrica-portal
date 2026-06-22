@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import {
@@ -13,7 +13,22 @@ import {
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 
+// Next.js 14 requires useSearchParams to be inside a Suspense boundary.
 export default function OrderSuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-page mx-auto px-4 sm:px-6 py-20 text-center text-brand-600">
+          Loading...
+        </div>
+      }
+    >
+      <OrderSuccessPageInner />
+    </Suspense>
+  );
+}
+
+function OrderSuccessPageInner() {
   const { orderId } = useParams();
   const searchParams = useSearchParams();
   const returnedFromPayFast = searchParams.get("paid") === "1";
