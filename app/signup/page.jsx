@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Script from "next/script";
 import { signUpCustomer } from "@/lib/auth";
+import RedirectIfSignedIn from "@/components/RedirectIfSignedIn";
 
 // Cloudflare Turnstile site key — public, safe to expose. Set in Vercel env.
 // When empty (e.g. local dev or before Cloudflare is configured) the widget
@@ -79,6 +80,9 @@ export default function SignupPage() {
 
   return (
     <div className="max-w-md mx-auto px-4 sm:px-6 py-16">
+      {/* Bounce signed-in customers to their dashboard so they don't see a
+          duplicate signup form while already authenticated. */}
+      <RedirectIfSignedIn />
       <h1 className="text-3xl font-bold text-brand-900">Create your account</h1>
       <p className="mt-2 text-brand-700">
         Sign up takes 30 seconds. We will review your application within one

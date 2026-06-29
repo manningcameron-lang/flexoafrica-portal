@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAuth } from "./AuthProvider";
 
 const PHONE = "+27 72 665 2041";
 const PHONE_TEL = "+27726652041";
@@ -8,6 +11,11 @@ const EMAIL = "sales@flexoafrica.com";
 
 export default function Footer() {
   const year = new Date().getFullYear();
+  // Match Nav's gating: only show authenticated links when the customer is
+  // actually active. Pending/suspended users should still see the public
+  // links so they have somewhere to land.
+  const { user, profile, loading } = useAuth();
+  const isSignedIn = !!user && !loading && profile?.status === "active";
 
   return (
     <footer className="bg-ink text-white mt-24">
@@ -28,29 +36,61 @@ export default function Footer() {
 
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-3">
-            Account
+            {isSignedIn ? "Account" : "Get started"}
           </div>
           <ul className="space-y-2 text-sm">
-            <li>
-              <Link href="/dashboard" className="text-white/80 hover:text-white">
-                Dashboard
-              </Link>
-            </li>
-            <li>
-              <Link href="/jobs" className="text-white/80 hover:text-white">
-                My Jobs
-              </Link>
-            </li>
-            <li>
-              <Link href="/order/new" className="text-white/80 hover:text-white">
-                Place Order
-              </Link>
-            </li>
-            <li>
-              <Link href="/profile" className="text-white/80 hover:text-white">
-                Profile
-              </Link>
-            </li>
+            {isSignedIn ? (
+              <>
+                <li>
+                  <Link href="/dashboard" className="text-white/80 hover:text-white">
+                    Dashboard
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/jobs" className="text-white/80 hover:text-white">
+                    My Jobs
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/order/new" className="text-white/80 hover:text-white">
+                    Place Order
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/profile" className="text-white/80 hover:text-white">
+                    Profile
+                  </Link>
+                </li>
+              </>
+            ) : (
+              <>
+                <li>
+                  <Link href="/services" className="text-white/80 hover:text-white">
+                    Services
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/configurator" className="text-white/80 hover:text-white">
+                    Configurator
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/about" className="text-white/80 hover:text-white">
+                    About + FAQ
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/login" className="text-white/80 hover:text-white">
+                    Sign in
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/signup" className="text-white/80 hover:text-white">
+                    Sign up
+                  </Link>
+                </li>
+              </>
+            )}
           </ul>
         </div>
 

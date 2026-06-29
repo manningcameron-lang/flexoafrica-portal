@@ -183,7 +183,12 @@ function OrderSuccessPageInner() {
   const anyFailed = jobs.some((j) => j.analysisStatus === "failed");
 
   const isPaid = order.paymentStatus === "paid";
-  const awaitingConfirmation = returnedFromPayFast && !isPaid;
+  // ITN flagged a discrepancy (typically amount mismatch). Don't show
+  // the Pay Now button again — we want the customer to talk to us first
+  // so we can reconcile before any retry.
+  const isUnderReview = order.paymentStatus === "amount_mismatch";
+  const awaitingConfirmation =
+    returnedFromPayFast && !isPaid && !isUnderReview;
 
   return (
     <>
@@ -231,6 +236,21 @@ function OrderSuccessPageInner() {
                 <p className="text-sm text-green-800 mt-0.5">
                   Thank you! Your payment has been confirmed. We will start
                   processing your plates shortly.
+                </p>
+              </div>
+            </div>
+          ) : isUnderReview ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 flex items-start gap-4">
+              <span className="text-amber-600 text-2xl flex-shrink-0">!</span>
+              <div>
+                <p className="font-semibold text-amber-900">
+                  Payment under review
+                </p>
+                <p className="text-sm text-amber-800 mt-0.5">
+                  We received a notification from PayFast but the amount
+                  doesn&apos;t match this order. Our team is reconciling and
+                  will be in touch shortly. No need to retry the payment
+                  while this is being checked.
                 </p>
               </div>
             </div>

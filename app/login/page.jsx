@@ -4,10 +4,14 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn, postLoginPath } from "@/lib/auth";
+import RedirectIfSignedIn from "@/components/RedirectIfSignedIn";
 
 export default function LoginPage() {
   return (
     <Suspense fallback={<div className="max-w-md mx-auto px-4 sm:px-6 py-16 text-brand-600">Loading...</div>}>
+      {/* Bounce signed-in customers so they don't see a signin form while
+          already authenticated. */}
+      <RedirectIfSignedIn />
       <LoginForm />
     </Suspense>
   );

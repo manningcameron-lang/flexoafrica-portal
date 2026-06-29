@@ -35,12 +35,17 @@ export default function ContactPage() {
   const [status, setStatus] = useState("idle"); // idle | submitting | success | error
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const wa = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER;
-  const waLink = wa
-    ? `https://wa.me/${wa}?text=${encodeURIComponent(
-        "Hi Flexo Africa, I have a question about plates."
-      )}`
-    : null;
+  // WhatsApp + email contact details. Kept in sync with Footer.jsx; if these
+  // ever change, update both. Number is hardcoded rather than env-driven to
+  // avoid the "appears blank when env var unset" failure mode hit on the
+  // first launch.
+  const WHATSAPP = "+27 64 586 7535";
+  const WHATSAPP_LINK = `https://wa.me/27645867535?text=${encodeURIComponent(
+    "Hi Flexo Africa, I have a question about plates."
+  )}`;
+  const EMAIL = "sales@flexoafrica.com";
+  const PHONE = "+27 72 665 2041";
+  const PHONE_TEL = "+27726652041";
 
   function update(field) {
     return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -176,22 +181,18 @@ export default function ContactPage() {
           <aside className="space-y-6">
             <div className="bg-brand-50 rounded-xl border border-brand-100 p-6">
               <h3 className="font-semibold text-brand-900">Other ways to reach us</h3>
-              {waLink && (
-                <a
-                  href={waLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex w-full justify-center px-4 py-3 bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-md"
-                >
-                  Chat on WhatsApp
-                </a>
-              )}
-              {!waLink && (
-                <p className="mt-4 text-sm text-brand-600">
-                  WhatsApp link will appear here once your business number is set.
-                </p>
-              )}
+              <a
+                href={WHATSAPP_LINK}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 flex w-full justify-center px-4 py-3 bg-accent-500 hover:bg-accent-600 text-white font-medium rounded-md"
+              >
+                Chat on WhatsApp
+              </a>
               <div className="mt-6 space-y-3 text-sm text-brand-700">
+                <Detail label="WhatsApp" value={WHATSAPP} href={WHATSAPP_LINK} external />
+                <Detail label="Phone" value={PHONE} href={`tel:${PHONE_TEL}`} />
+                <Detail label="Email" value={EMAIL} href={`mailto:${EMAIL}`} />
                 <Detail label="Address" value="Assagay, KwaZulu-Natal, South Africa" />
                 <Detail label="Hours" value="Mon to Fri, 8am to 5pm SAST" />
               </div>
@@ -230,11 +231,25 @@ function Field({ label, hint, ...rest }) {
   );
 }
 
-function Detail({ label, value }) {
+function Detail({ label, value, href, external = false }) {
   return (
     <div>
       <dt className="text-xs uppercase tracking-wider text-brand-500">{label}</dt>
-      <dd className="mt-0.5 text-brand-900">{value}</dd>
+      <dd className="mt-0.5 text-brand-900">
+        {href ? (
+          <a
+            href={href}
+            {...(external
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {})}
+            className="hover:text-accent-600"
+          >
+            {value}
+          </a>
+        ) : (
+          value
+        )}
+      </dd>
     </div>
   );
 }
@@ -243,7 +258,7 @@ function SuccessCard({ onReset }) {
   return (
     <div className="bg-white rounded-xl border border-green-200 p-8 text-center shadow-sm">
       <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-600 text-2xl mb-4">
-        v
+        ✓
       </div>
       <h2 className="text-2xl font-bold text-brand-900">Got it. Thanks.</h2>
       <p className="mt-2 text-brand-700">

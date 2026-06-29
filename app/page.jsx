@@ -20,7 +20,8 @@ export default function HomePage() {
             </h1>
             <p className="mt-5 text-lg text-brand-700 max-w-lg">
               Live order tracking from order to delivery. Three plate tiers,
-              fourteen specs. Turnaround in 24 to 48 hours.
+              fourteen specs. Standard turnaround 48 to 72 hours, Express in
+              24 to 36.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link

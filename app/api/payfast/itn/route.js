@@ -6,12 +6,20 @@ const MERCHANT_ID = process.env.PAYFAST_MERCHANT_ID;
 const PASSPHRASE = process.env.PAYFAST_PASSPHRASE;
 const SANDBOX = process.env.PAYFAST_SANDBOX === "true";
 
+// PayFast notification servers. Used as a defence-in-depth check on top of
+// the signature + server-side validate-roundtrip. Source IP belongs to one
+// of these hosts. https://developers.payfast.co.za/docs#step_4_confirm_source
 const PAYFAST_VALID_HOSTS = [
   "sandbox.payfast.co.za",
   "www.payfast.co.za",
   "w1w.payfast.co.za",
   "w2w.payfast.co.za",
 ];
+
+// Amount tolerance in ZAR when comparing PayFast's amount_gross to the order
+// total we stored. Floating-point rounding can drift by a cent; anything
+// further than this is treated as a tamper / mismatch.
+const AMOUNT_TOLERANCE_ZAR = 0.02;
 
 /**
  * Verify the ITN MD5 signature.
@@ -87,7 +95,7 @@ export async function POST(request) {
       return NextResponse.json({ ok: true });
     }
 
-    // 5. Update Firestore
+    // 5. Resolve the order. m_payment_id is the Firestore order doc id.
     const orderId = params.m_payment_id;
     if (!orderId) {
       console.error("PayFast ITN: no m_payment_id in params");
@@ -95,14 +103,61 @@ export async function POST(request) {
     }
 
     const adminDb = getAdminDb();
-    await adminDb.collection("orders").doc(orderId).update({
+    const orderRef = adminDb.collection("orders").doc(orderId);
+    const snap = await orderRef.get();
+    if (!snap.exists) {
+      console.error(`PayFast ITN: order ${orderId} not found`);
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+    const order = snap.data();
+
+    // 6. Idempotency: if we've already marked this order paid, log the
+    // duplicate ITN and acknowledge without rewriting. Prevents paidAt /
+    // pfAmount drift if PayFast retries the notification.
+    if (order.paymentStatus === "paid") {
+      console.log(
+        `PayFast ITN: order ${orderId} already paid (pf_payment_id: ${order.pfPaymentId}), ignoring duplicate ITN`
+      );
+      return NextResponse.json({ ok: true, duplicate: true });
+    }
+
+    // 7. Amount cross-check. Even with a valid signature we never trust the
+    // amount alone — compare against the order total we stored at checkout
+    // time. Mismatch could mean tampering, a stale order, or our own bug.
+    // Either way, do NOT mark paid. Flag for human review.
+    const expectedAmount = Number(order.orderTotalIncVat || 0);
+    const paidAmount = Number(params.amount_gross || 0);
+    if (
+      !Number.isFinite(expectedAmount) ||
+      expectedAmount <= 0 ||
+      Math.abs(paidAmount - expectedAmount) > AMOUNT_TOLERANCE_ZAR
+    ) {
+      console.error(
+        `PayFast ITN: amount mismatch for order ${orderId}. expected=${expectedAmount} paid=${paidAmount}`
+      );
+      await orderRef.update({
+        paymentStatus: "amount_mismatch",
+        pfAmount: paidAmount || null,
+        pfPaymentId: params.pf_payment_id || null,
+        paymentFlaggedAt: new Date().toISOString(),
+        paymentFlagReason: `Expected R${expectedAmount.toFixed(
+          2
+        )}, PayFast reported R${paidAmount.toFixed(2)}`,
+      });
+      return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
+    }
+
+    // 8. All checks passed. Mark paid.
+    await orderRef.update({
       paymentStatus: "paid",
       pfPaymentId: params.pf_payment_id || null,
       paidAt: new Date().toISOString(),
-      pfAmount: params.amount_gross || null,
+      pfAmount: paidAmount,
     });
 
-    console.log(`PayFast ITN: order ${orderId} marked paid (pf_payment_id: ${params.pf_payment_id})`);
+    console.log(
+      `PayFast ITN: order ${orderId} marked paid (pf_payment_id: ${params.pf_payment_id}, amount: R${paidAmount.toFixed(2)})`
+    );
 
     return NextResponse.json({ ok: true });
   } catch (err) {
