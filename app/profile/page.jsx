@@ -124,6 +124,24 @@ export default function ProfilePage() {
         </form>
       </section>
 
+      {/* Email notifications */}
+      <section className="mt-6 card p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-ink-muted">
+          Email notifications
+        </h2>
+        <p className="mt-2 text-sm text-ink-muted">
+          Choose which emails we send you when a job changes stage.
+        </p>
+        <div className="mt-4">
+          <Link
+            href="/profile/notifications"
+            className="btn-secondary inline-flex"
+          >
+            Manage email preferences
+          </Link>
+        </div>
+      </section>
+
       {/* Password reset */}
       <section className="mt-6 card p-6">
         <h2 className="text-sm font-semibold uppercase tracking-widest text-ink-muted">
