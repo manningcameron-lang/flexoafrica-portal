@@ -8,6 +8,7 @@ import { subscribeJob, formatDate, formatDateTime } from "@/lib/jobs";
 import { getStage, STAGE_CHIP } from "@/lib/stages";
 import StatusTimeline from "@/components/StatusTimeline";
 import ApprovalActions from "@/components/ApprovalActions";
+import JobCommentsThread from "@/components/JobCommentsThread";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -209,6 +210,9 @@ export default function JobDetailPage() {
               </DetailGrid>
             </DetailCard>
           )}
+
+          {/* Conversation */}
+          <JobCommentsThread job={job} />
 
           {/* Revisions log */}
           {job.revisions && job.revisions.length > 0 && (
