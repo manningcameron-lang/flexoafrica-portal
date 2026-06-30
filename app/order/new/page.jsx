@@ -434,10 +434,15 @@ export default function NewOrderPage() {
                     of subtotal. Larger orders qualify for lower percentages.
                   </p>
                 )}
+                {deliveryMethod === "delivery" && deliveryFeePctApplied === 0 && (
+                  <p className="mt-2 text-xs text-green-700">
+                    Free delivery on all orders, no minimum.
+                  </p>
+                )}
                 {isCollection && (
                   <p className="mt-2 text-xs text-green-700">
-                    Collection selected, no delivery fee charged. We'll let you
-                    know when your plates are ready to collect.
+                    Collection selected. We'll let you know when your plates
+                    are ready to collect.
                   </p>
                 )}
               </div>
@@ -514,6 +519,17 @@ export default function NewOrderPage() {
               <p className="mt-4 text-xs text-white/60 max-w-xl">
                 Submitting creates a job per plate in our system. Our team prepares your artwork
                 and sends a proof for approval before plates are made. Track progress in your dashboard.
+              </p>
+              <p className="mt-3 text-xs text-white/50 max-w-xl">
+                Placing an order means you accept our{" "}
+                <Link href="/terms" className="underline hover:text-white" target="_blank">
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link href="/privacy" className="underline hover:text-white" target="_blank">
+                  Privacy Policy
+                </Link>
+                .
               </p>
             </div>
           </div>

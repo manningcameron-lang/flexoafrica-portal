@@ -157,8 +157,15 @@ export default function SignupPage() {
         </button>
 
         <p className="text-xs text-brand-500">
-          By signing up you agree to the Flexo Africa Terms of Service and
-          Privacy Policy.
+          By signing up you agree to the Flexo Africa{" "}
+          <Link href="/terms" className="underline hover:text-brand-700">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="underline hover:text-brand-700">
+            Privacy Policy
+          </Link>
+          .
         </p>
       </form>
 
