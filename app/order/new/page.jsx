@@ -14,6 +14,7 @@ import {
   TURNAROUND_TIERS,
   DELIVERY_METHOD_OPTIONS,
   VAT_PERCENT,
+  PUBLIC_SELL_RATE_PER_CM2,
 } from "@/lib/plate-types";
 import {
   calcPrice,
@@ -23,10 +24,6 @@ import {
 } from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
 import { analyzePdfClient } from "@/lib/pdf-analyzer";
-import {
-  subscribeCustomerRates,
-  resolveCustomerRate,
-} from "@/lib/customer-rates";
 
 function newLineItem() {
   return {
@@ -96,11 +93,13 @@ export default function NewOrderPage() {
           loading: false,
           poApproved: !!body.poApproved,
           companyDeliveryAddress: body.companyDeliveryAddress || "",
+          ratePerCm2: Number(body.ratePerCm2) > 0 ? Number(body.ratePerCm2) : null,
         });
       } catch {
         // Fail CLOSED: if we can't confirm account terms, treat the customer
         // as pay-by-card rather than letting an order through unpaid.
-        if (!cancelled) setTerms({ loading: false, poApproved: false });
+        if (!cancelled)
+          setTerms({ loading: false, poApproved: false, ratePerCm2: null });
       }
     })();
     return () => {
@@ -149,24 +148,18 @@ export default function NewOrderPage() {
     setDeliveryAddress(lines.join("\n"));
   }, [profile, terms.companyDeliveryAddress]); // eslint-disable-line
 
-  // ----- customer rate (loaded from MIS settings/customers) -----
-  // Subscribes once on mount, kept up to date by listener. Matched against
-  // the customer's `company` field exactly. Falls back to placeholder.
-  const [customerRateMaps, setCustomerRateMaps] = useState({
-    rates: {},
-    repeats: {},
-  });
-  useEffect(() => {
-    if (!user) return;
-    const unsub = subscribeCustomerRates(setCustomerRateMaps);
-    return unsub;
-  }, [user]);
-
-  const customerRateInfo = useMemo(
-    () => resolveCustomerRate(profile?.company || "", customerRateMaps, false),
-    [profile?.company, customerRateMaps],
-  );
-  const ratePerCm2 = customerRateInfo.rate;
+  // ----- customer rate -----
+  // Comes from /api/account/terms (see the `terms` fetch above), which returns
+  // only THIS customer's rate.
+  //
+  // It used to subscribe to settings/customers directly from the browser — but
+  // that document holds every customer's sell rate, repeat rate, VAT number and
+  // addresses. Any signed-in customer could read the entire rate card out of
+  // devtools. Firestore rules now restrict /settings to staff. Cam 2026-07-14.
+  //
+  // This rate is for DISPLAY ONLY. The server re-resolves it and reprices the
+  // order at /api/orders/create; whatever we show here is a quote.
+  const ratePerCm2 = terms.ratePerCm2 || PUBLIC_SELL_RATE_PER_CM2;
 
   // ----- pricing -----
   // Plate quantity = number of ticked separations (one plate per colour).
@@ -325,7 +318,12 @@ export default function NewOrderPage() {
     setSubmitting(true);
     try {
       setSubmitProgress("Uploading and placing order...");
+      // NOTE: we deliberately do NOT send the price or paymentTerms. The
+      // server recomputes the total from the customer's rate in the MIS
+      // register and derives the payment route from settings/customers. The
+      // figures shown on this page are a quote, not the source of truth.
       const result = await createOrderFromPortal({
+        user,
         profile: { ...profile, uid: user.uid },
         header: {
           poNumber,
@@ -333,15 +331,8 @@ export default function NewOrderPage() {
           requiredByDate,
           tier: turnaroundTier,
           deliveryMethod,
-          deliveryFeePct: deliveryFeePctApplied,
-          deliveryFeeAmount: deliveryFeeTotal,
-          orderTotalIncVat: total,
-          // Payment route. "po" = on account (PO number + document supplied,
-          // invoiced later). "prepaid" = must pay by card via PayFast before
-          // we make plates.
-          paymentTerms: terms.poApproved ? "po" : "prepaid",
         },
-        poFile: terms.poApproved ? poFile : null,
+        poFile,
         lineItems,
       });
       setSubmitProgress("Done. Redirecting...");

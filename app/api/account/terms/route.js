@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
+import { matchCustomer } from "@/lib/company-match";
 
 /**
  * GET /api/account/terms
@@ -45,22 +46,28 @@ export async function GET(request) {
     }
 
     // 2. Look up the company in the MIS customer register.
+    //
+    // This document holds EVERY customer's sell rate, repeat rate, VAT number
+    // and addresses. It must never reach the browser — Firestore rules now
+    // restrict /settings to staff. We resolve it here with admin credentials
+    // and return only this one customer's own figures.
     const settingsSnap = await adminDb
       .collection("settings")
       .doc("customers")
       .get();
     const list = settingsSnap.exists ? settingsSnap.data()?.list || [] : [];
 
-    // Match on name, case-insensitive + whitespace-tolerant. The portal
-    // captures `company` as free text at signup, so exact matching is brittle.
-    const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
-    const match = list.find((c) => norm(c.name) === norm(company));
+    const match = matchCustomer(list, company);
 
     return NextResponse.json({
       company,
       matched: !!match,
       poApproved: !!match?.poApproved,
       companyDeliveryAddress: match?.deliveryAddress || "",
+      // The customer's OWN rate, so the order form can show an accurate quote.
+      // Null = no matching customer record; the form falls back to the public
+      // anchor rate, and the server does the same when it prices the order.
+      ratePerCm2: Number(match?.rate) > 0 ? Number(match.rate) : null,
     });
   } catch (err) {
     console.error("account/terms error:", err);
