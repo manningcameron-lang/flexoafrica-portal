@@ -68,6 +68,46 @@ export default function NewOrderPage() {
   // ----- line items -----
   const [lineItems, setLineItems] = useState([newLineItem()]);
 
+  // ----- purchase order (PO-approved companies only) -----
+  const [poFile, setPoFile] = useState(null);
+
+  // ----- account terms (resolved server-side) -----
+  // Whether this customer's company is approved to order on a purchase order.
+  // Resolved by /api/account/terms, which reads the MIS customer register with
+  // admin credentials. We deliberately do NOT read settings/customers from the
+  // client — it holds every customer's sell rate.
+  //
+  // `poApproved` here only drives the UI. The authoritative check runs again
+  // server-side when the order is created, so a tampered client can't skip
+  // payment. Cam 2026-07-14.
+  const [terms, setTerms] = useState({ loading: true, poApproved: false });
+  useEffect(() => {
+    if (loading || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/account/terms", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setTerms({
+          loading: false,
+          poApproved: !!body.poApproved,
+          companyDeliveryAddress: body.companyDeliveryAddress || "",
+        });
+      } catch {
+        // Fail CLOSED: if we can't confirm account terms, treat the customer
+        // as pay-by-card rather than letting an order through unpaid.
+        if (!cancelled) setTerms({ loading: false, poApproved: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading]);
+
   // ----- submit state -----
   const [submitting, setSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState("");
@@ -85,19 +125,29 @@ export default function NewOrderPage() {
       );
   }, [user, profile, loading, router]);
 
-  // Auto-populate delivery address with everything from the profile we know
-  // (company + contact + phone + email). Runs once when the profile arrives.
+  // Auto-populate delivery address. Prefers the customer's saved default
+  // (Profile → Default delivery address), then the company address on the MIS
+  // record, then falls back to a stub built from what we know about them.
   useEffect(() => {
-    if (profile && !deliveryAddress) {
-      const lines = [];
-      if (profile.company) lines.push(profile.company);
-      if (profile.contactName) lines.push(`Attn: ${profile.contactName}`);
-      if (profile.phone) lines.push(profile.phone);
-      if (profile.email) lines.push(profile.email);
-      lines.push("", "Delivery address:");
-      setDeliveryAddress(lines.join("\n"));
+    if (!profile || deliveryAddress) return;
+    const saved = (profile.deliveryAddress || "").trim();
+    if (saved) {
+      setDeliveryAddress(saved);
+      return;
     }
-  }, [profile]); // eslint-disable-line
+    const fromCompany = (terms.companyDeliveryAddress || "").trim();
+    if (fromCompany) {
+      setDeliveryAddress(fromCompany);
+      return;
+    }
+    const lines = [];
+    if (profile.company) lines.push(profile.company);
+    if (profile.contactName) lines.push(`Attn: ${profile.contactName}`);
+    if (profile.phone) lines.push(profile.phone);
+    if (profile.email) lines.push(profile.email);
+    lines.push("", "Delivery address:");
+    setDeliveryAddress(lines.join("\n"));
+  }, [profile, terms.companyDeliveryAddress]); // eslint-disable-line
 
   // ----- customer rate (loaded from MIS settings/customers) -----
   // Subscribes once on mount, kept up to date by listener. Matched against
@@ -200,10 +250,16 @@ export default function NewOrderPage() {
     rushUplift: expressUplift,
     deliveryFee: deliveryFeeTotal,
     deliveryPct: deliveryFeePctApplied,
+    freeDeliveryShortfall,
+    freeDeliveryThreshold,
     vat,
     total,
     isCollection,
   } = orderTotals;
+
+  // Pre-VAT subtotal incl. express uplift — the figure the R1500 free-delivery
+  // threshold is measured against.
+  const orderSubtotalExVat = subtotal + expressUplift;
 
   // Accepts either:
   //   updateLineItem(idx, "fieldName", value)   — single field
@@ -227,6 +283,14 @@ export default function NewOrderPage() {
   }
 
   function validate() {
+    // PO-approved companies order on account, so finance needs both the PO
+    // number and the PO document up front. Cam 2026-07-14.
+    if (terms.poApproved) {
+      if (!poNumber.trim())
+        return "Enter your purchase order number.";
+      if (!poFile)
+        return "Upload your purchase order document.";
+    }
     if (!deliveryAddress.trim()) return "Add a delivery address.";
     if (!requiredByDate) return "Pick a required-by date.";
     for (let i = 0; i < lineItems.length; i++) {
@@ -272,7 +336,12 @@ export default function NewOrderPage() {
           deliveryFeePct: deliveryFeePctApplied,
           deliveryFeeAmount: deliveryFeeTotal,
           orderTotalIncVat: total,
+          // Payment route. "po" = on account (PO number + document supplied,
+          // invoiced later). "prepaid" = must pay by card via PayFast before
+          // we make plates.
+          paymentTerms: terms.poApproved ? "po" : "prepaid",
         },
+        poFile: terms.poApproved ? poFile : null,
         lineItems,
       });
       setSubmitProgress("Done. Redirecting...");
@@ -425,20 +494,33 @@ export default function NewOrderPage() {
                     />
                   ))}
                 </div>
-                {deliveryMethod === "delivery" && deliveryFeePctApplied > 0 && (
+                {deliveryMethod === "delivery" && deliveryFeeTotal > 0 && (
                   <p className="mt-2 text-xs text-ink-muted">
-                    Delivery fee for this order size:{" "}
+                    Delivery fee:{" "}
                     <span className="font-semibold text-ink">
-                      {deliveryFeePctApplied}%
+                      {formatZAR(deliveryFeeTotal)}
                     </span>{" "}
-                    of subtotal. Larger orders qualify for lower percentages.
+                    on orders under {formatZAR(freeDeliveryThreshold)} excl. VAT.
+                    {freeDeliveryShortfall > 0 && (
+                      <>
+                        {" "}
+                        Add{" "}
+                        <span className="font-semibold text-ink">
+                          {formatZAR(freeDeliveryShortfall)}
+                        </span>{" "}
+                        more to qualify for free delivery.
+                      </>
+                    )}
                   </p>
                 )}
-                {deliveryMethod === "delivery" && deliveryFeePctApplied === 0 && (
-                  <p className="mt-2 text-xs text-green-700">
-                    Free delivery on all orders, no minimum.
-                  </p>
-                )}
+                {deliveryMethod === "delivery" &&
+                  deliveryFeeTotal === 0 &&
+                  orderSubtotalExVat > 0 && (
+                    <p className="mt-2 text-xs text-green-700">
+                      Free delivery — this order is over{" "}
+                      {formatZAR(freeDeliveryThreshold)} excl. VAT.
+                    </p>
+                  )}
                 {isCollection && (
                   <p className="mt-2 text-xs text-green-700">
                     Collection selected. We'll let you know when your plates
@@ -449,7 +531,12 @@ export default function NewOrderPage() {
 
               <div className="grid sm:grid-cols-2 gap-4">
                 <Field
-                  label="PO number (optional)"
+                  label={
+                    terms.poApproved
+                      ? "Purchase order number"
+                      : "PO number (optional)"
+                  }
+                  required={terms.poApproved}
                   value={poNumber}
                   onChange={(e) => setPoNumber(e.target.value)}
                   placeholder="e.g. PO-2026-1234"
@@ -461,6 +548,56 @@ export default function NewOrderPage() {
                   onChange={(e) => setRequiredByDate(e.target.value)}
                 />
               </div>
+
+              {/* ── Account customers: PO document upload ──────────────────
+                  Companies flagged "Approved to order on PO" in MIS order on
+                  account. They must attach the actual purchase order, which
+                  finance needs to raise the invoice against. Everyone else
+                  pays by card on the success page and never sees this.
+                  Cam 2026-07-14. */}
+              {terms.poApproved && (
+                <div className="rounded-xl border border-brand-200 bg-brand-50/60 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 text-brand-600 text-lg flex-shrink-0">
+                      🧾
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-brand-900 text-sm">
+                        Your company orders on account
+                      </p>
+                      <p className="text-xs text-brand-700 mt-0.5">
+                        No card payment needed. Attach your purchase order and
+                        we&apos;ll invoice against it.
+                      </p>
+
+                      <label className="block mt-3">
+                        <span className="text-xs font-semibold text-ink uppercase tracking-wider">
+                          Purchase order document{" "}
+                          <span className="text-accent-500">*</span>
+                        </span>
+                        <input
+                          type="file"
+                          accept=".pdf,image/png,image/jpeg"
+                          onChange={(e) =>
+                            setPoFile(e.target.files?.[0] || null)
+                          }
+                          className="mt-1 block w-full text-sm text-ink-muted file:mr-3 file:rounded-md file:border-0 file:bg-brand-700 file:px-4 file:py-2 file:text-white file:font-medium hover:file:bg-brand-800"
+                        />
+                        <span className="mt-1 block text-[11px] text-ink-muted">
+                          PDF, PNG or JPG. A photo or scan of a signed PO is
+                          fine.
+                        </span>
+                      </label>
+
+                      {poFile && (
+                        <p className="mt-2 text-xs text-green-700 font-medium">
+                          ✓ Attached: {poFile.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
               <label className="block">
                 <span className="text-sm font-medium text-ink">
                   Delivery address <span className="text-accent-500">*</span>
@@ -490,7 +627,13 @@ export default function NewOrderPage() {
                   <div className="text-xs uppercase tracking-wider text-white/70">Total incl. VAT</div>
                   <div className="text-4xl font-bold mt-1">{formatZAR(total)}</div>
                   <div className="text-xs text-white/60 mt-1">
-                    {tierInfo.label} turnaround · includes delivery · {VAT_PERCENT}% VAT
+                    {tierInfo.label} turnaround ·{" "}
+                    {isCollection
+                      ? "collection"
+                      : deliveryFeeTotal > 0
+                      ? `incl. ${formatZAR(deliveryFeeTotal)} delivery`
+                      : "free delivery"}{" "}
+                    · {VAT_PERCENT}% VAT
                   </div>
                   {upliftPct > 0 && (
                     <div className="mt-2 text-xs text-accent-300">
@@ -1526,11 +1669,14 @@ function PlateIllustration() {
 
 // ─── Small form atoms ─────────────────────────────────────────────────────
 
-function Field({ label, ...rest }) {
+function Field({ label, required, ...rest }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-ink">{label}</span>
+      <span className="text-sm font-medium text-ink">
+        {label} {required && <span className="text-accent-500">*</span>}
+      </span>
       <input
+        required={required}
         {...rest}
         className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent-500/30 focus:border-accent-500"
       />

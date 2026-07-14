@@ -13,6 +13,7 @@ export default function ProfilePage() {
     company: "",
     contactName: "",
     phone: "",
+    deliveryAddress: "",
   });
   const [state, setState] = useState({ status: "idle", message: "" });
   const [pwState, setPwState] = useState({ status: "idle", message: "" });
@@ -23,6 +24,7 @@ export default function ProfilePage() {
         company: profile.company || "",
         contactName: profile.contactName || "",
         phone: profile.phone || "",
+        deliveryAddress: profile.deliveryAddress || "",
       });
     }
   }, [profile]);
@@ -106,6 +108,33 @@ export default function ProfilePage() {
             value={form.phone}
             onChange={(v) => setForm({ ...form, phone: v })}
           />
+
+          {/* Default delivery address — prefills the order form so customers
+              don't retype it on every order. Cam 2026-07-14. */}
+          <div>
+            <label
+              htmlFor="deliveryAddress"
+              className="block text-sm font-medium text-ink"
+            >
+              Default delivery address
+            </label>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              We&apos;ll use this to prefill your order form. You can still
+              change it on any individual order.
+            </p>
+            <textarea
+              id="deliveryAddress"
+              name="deliveryAddress"
+              rows={4}
+              value={form.deliveryAddress}
+              onChange={(e) =>
+                setForm({ ...form, deliveryAddress: e.target.value })
+              }
+              placeholder={"Unit 4, 12 Industrial Road\nPinetown\nDurban\n3610"}
+              className="mt-2 w-full rounded-md border border-ink/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          </div>
+
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"

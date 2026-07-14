@@ -187,8 +187,13 @@ function OrderSuccessPageInner() {
   // the Pay Now button again — we want the customer to talk to us first
   // so we can reconcile before any retry.
   const isUnderReview = order.paymentStatus === "amount_mismatch";
+  // Account customers (PO-approved) never pay by card — they supplied a PO
+  // number + document at checkout and are invoiced against it. Showing them a
+  // Pay Now button would be wrong and would double-charge. Cam 2026-07-14.
+  const isOnAccount =
+    order.paymentTerms === "po" || order.paymentStatus === "on_account";
   const awaitingConfirmation =
-    returnedFromPayFast && !isPaid && !isUnderReview;
+    returnedFromPayFast && !isPaid && !isUnderReview && !isOnAccount;
 
   return (
     <>
@@ -228,7 +233,36 @@ function OrderSuccessPageInner() {
       {/* Payment banner */}
       <section className="border-b border-brand-100">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
-          {isPaid ? (
+          {isOnAccount ? (
+            <div className="rounded-xl border border-green-200 bg-green-50 p-5 flex items-start gap-4">
+              <span className="text-green-600 text-2xl flex-shrink-0">✓</span>
+              <div>
+                <p className="font-semibold text-green-900">
+                  On account — no payment needed
+                </p>
+                <p className="text-sm text-green-800 mt-0.5">
+                  Your company is approved to order on a purchase order.
+                  {order.poNumber ? (
+                    <>
+                      {" "}
+                      We&apos;ve logged this order against PO{" "}
+                      <span className="font-semibold">{order.poNumber}</span>
+                      {order.poDocument?.fileName ? (
+                        <> and received your PO document.</>
+                      ) : (
+                        <>.</>
+                      )}
+                    </>
+                  ) : null}{" "}
+                  We&apos;ll invoice you against it. Order total:{" "}
+                  <span className="font-semibold">
+                    R{Number(order.orderTotalIncVat || 0).toFixed(2)} incl. VAT
+                  </span>
+                  .
+                </p>
+              </div>
+            </div>
+          ) : isPaid ? (
             <div className="rounded-xl border border-green-200 bg-green-50 p-5 flex items-center gap-4">
               <span className="text-green-600 text-2xl flex-shrink-0">✓</span>
               <div>
