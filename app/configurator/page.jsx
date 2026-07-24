@@ -29,8 +29,9 @@ export default function ConfiguratorPage() {
         heightCm,
         qty,
         isExpress: tier === "express",
+        plateTypeId,
       }),
-    [widthCm, heightCm, qty, tier]
+    [widthCm, heightCm, qty, tier, plateTypeId]
   );
 
   const isComplete =

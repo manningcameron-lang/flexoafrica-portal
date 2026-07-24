@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
-import { PLATE_TYPES, SUBSTRATE_OPTIONS, TURNAROUND_TIERS } from "@/lib/plate-types";
+import { PLATE_TYPES, SUBSTRATE_OPTIONS, TURNAROUND_TIERS, tierRateFor } from "@/lib/plate-types";
 import { priceLineItems, calcOrderTotals } from "@/lib/pricing";
 import { matchCustomer } from "@/lib/company-match";
 import { PORTAL_DEMO_MODE, formatOrderNumber, formatJobNumber } from "@/lib/order-format";
@@ -163,6 +163,10 @@ export async function POST(request) {
     const createdJobs = [];
     for (const li of lineItems) {
       const plateType = PLATE_TYPES.find((p) => p.id === li.plateTypeId);
+      // The rate we actually charge for this line's plate type. Crystal is the
+      // flat premium rate; everything else is the customer's rate. Stored on
+      // the job so MIS shows the real sell rate, not the account base.
+      const jobRate = tierRateFor(li.plateTypeId, ratePerCm2);
       const sel = li.selectedColors || {};
       const colourKeys = Object.keys(sel).filter((k) => sel[k]);
       const platesToCreate =
@@ -217,7 +221,7 @@ export async function POST(request) {
           around: "",
           barcode: "",
           colours: plate.label ? [plate.label] : [],
-          sellRate: ratePerCm2 ?? null,
+          sellRate: jobRate ?? null,
           totalSell: 0,
           totalCost: 0,
           margin: null,

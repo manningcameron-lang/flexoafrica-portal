@@ -221,6 +221,7 @@ export default function NewOrderPage() {
             plates,
             isExpress,
             ratePerCm2,
+            plateTypeId: li.plateTypeId,
           });
         }
         return calcPrice({
@@ -229,6 +230,7 @@ export default function NewOrderPage() {
           qty: platesForLineItem(li),
           isExpress,
           ratePerCm2,
+          plateTypeId: li.plateTypeId,
         });
       }),
     [lineItems, isExpress, ratePerCm2]
