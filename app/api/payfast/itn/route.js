@@ -22,6 +22,18 @@ const PAYFAST_VALID_HOSTS = [
 const AMOUNT_TOLERANCE_ZAR = 0.02;
 
 /**
+ * URL-encode a value the way PayFast's server does (PHP urlencode), matching
+ * the checkout route. encodeURIComponent leaves !'()*~ unescaped and encodes
+ * space as %20; PHP urlencode escapes those and uses + for spaces. Keeping both
+ * sides identical means a customer name like O'Brien can't fail verification.
+ */
+function pfEncode(value) {
+  return encodeURIComponent(String(value ?? "").trim())
+    .replace(/%20/g, "+")
+    .replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+/**
  * Verify the ITN MD5 signature.
  * PayFast signs all posted params (excluding 'signature') in the order they were sent.
  * We rebuild the string, append the passphrase, and compare MD5 hashes.
@@ -30,12 +42,10 @@ function verifySignature(params) {
   const { signature, ...rest } = params;
 
   const str = Object.keys(rest)
-    .map((k) => `${k}=${encodeURIComponent(rest[k] ?? "").replace(/%20/g, "+")}`)
+    .map((k) => `${k}=${pfEncode(rest[k])}`)
     .join("&");
 
-  const withPassphrase = PASSPHRASE
-    ? `${str}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, "+")}`
-    : str;
+  const withPassphrase = PASSPHRASE ? `${str}&passphrase=${pfEncode(PASSPHRASE)}` : str;
 
   const expected = crypto.createHash("md5").update(withPassphrase).digest("hex");
   return expected === signature;

@@ -11,20 +11,34 @@ const PAYFAST_URL = SANDBOX
   : "https://www.payfast.co.za/eng/process";
 
 /**
- * Build an MD5 signature from PayFast params.
- * Spec: alphabetically sort keys, URL-encode values, join as query string,
- * append &passphrase=..., then MD5 hash the whole string.
+ * URL-encode a value the way PayFast's server does (PHP urlencode).
+ * encodeURIComponent leaves !'()*~ unescaped and encodes space as %20;
+ * PHP urlencode escapes those chars and uses + for spaces. If the two sides
+ * disagree on a single character, the MD5 signatures diverge and PayFast
+ * returns "Generated signature does not match submitted signature". Trim
+ * first (PayFast trims each value before encoding).
+ */
+function pfEncode(value) {
+  return encodeURIComponent(String(value).trim())
+    .replace(/%20/g, "+")
+    .replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
+/**
+ * Build an MD5 signature from PayFast params for the redirect (custom)
+ * integration. CRITICAL: the pairs must be concatenated in the SAME ORDER the
+ * fields are POSTed to PayFast (insertion order), NOT alphabetically sorted.
+ * Sorting is the API-signature format and makes /eng/process reject the POST.
+ * PayFast recomputes over the received fields in received order, so we sign in
+ * that order too. Passphrase (if set on the merchant account) is appended last.
  */
 function buildSignature(params) {
-  const sorted = Object.keys(params)
-    .sort()
-    .filter((k) => params[k] !== "" && params[k] !== undefined)
-    .map((k) => `${k}=${encodeURIComponent(params[k]).replace(/%20/g, "+")}`)
+  const str = Object.keys(params)
+    .filter((k) => params[k] !== "" && params[k] !== undefined && params[k] !== null)
+    .map((k) => `${k}=${pfEncode(params[k])}`)
     .join("&");
 
-  const withPassphrase = PASSPHRASE
-    ? `${sorted}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, "+")}`
-    : sorted;
+  const withPassphrase = PASSPHRASE ? `${str}&passphrase=${pfEncode(PASSPHRASE)}` : str;
 
   return crypto.createHash("md5").update(withPassphrase).digest("hex");
 }
