@@ -171,16 +171,23 @@ function OrderSuccessPageInner() {
     );
   }
 
-  // Aggregate analysis status for the summary banner.
-  const anyAnalyzing = jobs.some(
+  // Aggregate analysis status for the summary banner. Only jobs that actually
+  // have an uploaded PDF can be analysed — a no-PDF order (e.g. API-created)
+  // never triggers the analyser, so it must NOT count as "analysing" or the
+  // banner spins forever. Cam 2026-07-28.
+  const previewableJobs = jobs.filter(
+    (j) => Array.isArray(j.pdfUrls) && j.pdfUrls.length > 0
+  );
+  const anyAnalyzing = previewableJobs.some(
     (j) =>
       !j.analysisStatus ||
       j.analysisStatus === "received" ||
       j.analysisStatus === "analyzing"
   );
   const allComplete =
-    jobs.length > 0 && jobs.every((j) => j.analysisStatus === "complete");
-  const anyFailed = jobs.some((j) => j.analysisStatus === "failed");
+    previewableJobs.length > 0 &&
+    previewableJobs.every((j) => j.analysisStatus === "complete");
+  const anyFailed = previewableJobs.some((j) => j.analysisStatus === "failed");
 
   const isPaid = order.paymentStatus === "paid";
   // ITN flagged a discrepancy (typically amount mismatch). Don't show
@@ -338,8 +345,8 @@ function OrderSuccessPageInner() {
         </div>
       </section>
 
-      {/* Artwork analysis banner */}
-      {jobs.length > 0 && (
+      {/* Artwork analysis banner — only when there's a PDF to analyse. */}
+      {previewableJobs.length > 0 && (
         <section className="border-b border-brand-100">
           <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
             <div
@@ -434,6 +441,24 @@ function OrderSuccessPageInner() {
 function JobReviewCard({ job }) {
   const status = job.analysisStatus || "received";
   const previewUrl = job.previewUrl;
+  // A job can only get a composite preview if a PDF was uploaded for it. A
+  // no-PDF order never fires the analyser Cloud Function, so its status stays
+  // "received" forever — show a calm empty state, not an endless spinner.
+  const hasPdf = Array.isArray(job.pdfUrls) && job.pdfUrls.length > 0;
+  const inProgress = hasPdf && status !== "complete" && status !== "failed";
+
+  // Timeout fallback: if the composite hasn't landed in ~90s, stop spinning
+  // and reassure the customer (the render may be slow or the function may have
+  // hiccuped; they still get an email when it's ready). Cam 2026-07-28.
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    if (!inProgress) {
+      setTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setTimedOut(true), 90000);
+    return () => clearTimeout(t);
+  }, [inProgress]);
 
   return (
     <div className="bg-white rounded-xl border border-brand-100 overflow-hidden">
@@ -478,6 +503,20 @@ function JobReviewCard({ job }) {
                 {job.analysisError}
               </div>
             )}
+          </div>
+        ) : !hasPdf ? (
+          <div className="text-sm text-brand-600 bg-white border border-brand-100 rounded-md p-3">
+            No artwork preview for this plate — no PDF was uploaded with the
+            order. Your order is still placed and our team has the details.
+          </div>
+        ) : timedOut ? (
+          <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 flex items-start gap-3">
+            <span className="text-amber-600 text-lg leading-none">⏳</span>
+            <span>
+              Still processing your preview. This one is taking a little longer
+              than usual — no need to wait here. We'll email you the moment it's
+              ready, and it'll appear in your dashboard.
+            </span>
           </div>
         ) : (
           <div className="flex items-center gap-3 text-sm text-brand-600">
