@@ -260,6 +260,25 @@ export async function POST(request) {
           portalColourLabel: plate.label,
           portalCustomerDescription: li.description || "",
 
+          // Delivery / order context denormalised onto the job so MIS operators
+          // see it without opening the order. deliveryAddress + deliveryMethod
+          // live on the order doc; the job schema has no delivery field of its
+          // own (MIS captures "Deliver To" at delivery-note time), so we mirror
+          // it here. Collection orders carry an explicit human-readable summary.
+          portalDeliveryMethod: deliveryMethod,
+          portalDeliveryAddress:
+            deliveryMethod === "collection"
+              ? ""
+              : String(header.deliveryAddress || "").trim(),
+          portalDeliverySummary:
+            deliveryMethod === "collection"
+              ? "Customer to collect"
+              : String(header.deliveryAddress || "").trim() ||
+                "Delivery — no address supplied",
+          portalRequiredByDate: header.requiredByDate || "",
+          portalPoNumber: String(header.poNumber || "").trim(),
+          portalPaymentTerms: paymentTerms,
+
           pdfUrls: pdfMeta ? [pdfMeta] : [],
 
           createdBy: decoded.uid,
