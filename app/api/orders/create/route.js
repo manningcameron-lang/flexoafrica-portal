@@ -284,13 +284,7 @@ export async function POST(request) {
           createdBy: decoded.uid,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
-        // merge:true so this write can NEVER clobber previewUrl / analysisStatus
-        // that the analyzeJobPdf Cloud Function may have already written to this
-        // pre-allocated job id (the browser uploads the PDF — firing the
-        // function — BEFORE calling this route). Without merge, a plain .set()
-        // races the function and can wipe the preview → infinite spinner on the
-        // success page. Cam 2026-07-28.
-        }, { merge: true });
+        });
 
         createdJobs.push({
           jobId: jobRef.id,
