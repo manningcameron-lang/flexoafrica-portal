@@ -184,7 +184,7 @@ export async function POST(request) {
         const jobNumberInt = await nextNumber(adminDb, jobCounter);
         const jobName = formatJobNumber(jobNumberInt);
 
-        const jobRef =
+        let jobRef =
           plateIdx === 0 && preAllocatedJobId
             ? adminDb.collection("jobs").doc(preAllocatedJobId)
             : adminDb.collection("jobs").doc();
@@ -195,7 +195,7 @@ export async function POST(request) {
           `${plateType.name} ${li.widthCm}x${li.heightCm}cm`;
         const fullDesc = plate.label ? `${baseDesc} - ${plate.label}` : baseDesc;
 
-        await jobRef.set({
+        const jobData = {
           jobName,
           jobNumberInt,
           stage: "artwork",
@@ -284,7 +284,18 @@ export async function POST(request) {
           createdBy: decoded.uid,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
-        });
+        };
+
+        // Use create() (never set()) so a client-supplied preAllocatedJobId can
+        // never OVERWRITE an existing job doc. A freshly pre-allocated id can't
+        // collide; if it does, the id was not ours (e.g. someone else's job) —
+        // fall back to a new server-generated id instead of clobbering it.
+        try {
+          await jobRef.create(jobData);
+        } catch (e) {
+          jobRef = adminDb.collection("jobs").doc();
+          await jobRef.create(jobData);
+        }
 
         createdJobs.push({
           jobId: jobRef.id,

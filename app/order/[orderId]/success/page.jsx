@@ -92,21 +92,16 @@ function OrderSuccessPageInner() {
     setPayError(null);
 
     try {
-      const nameParts = (profile?.contactName || order.customerName || "").trim().split(" ");
-      const firstName = nameParts[0] || "";
-      const lastName = nameParts.slice(1).join(" ") || "";
-
+      // The checkout route is authenticated and derives the amount + payer from
+      // the order doc server-side, so we only need to send the order id + token.
+      const token = await user.getIdToken();
       const res = await fetch("/api/payfast/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          amount: order.orderTotalIncVat,
-          email: user.email || order.customerEmail,
-          firstName,
-          lastName,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ orderId: order.id }),
       });
 
       if (!res.ok) {

@@ -14,7 +14,12 @@ export default function DashboardLayout({ children }) {
       router.replace("/login");
       return;
     }
-    if (!profile) return; // wait for profile to load
+    // loading is false here, so a null profile means the /users/{uid} doc
+    // genuinely doesn't exist — don't spin forever; send them back to login.
+    if (!profile) {
+      router.replace("/login?error=noprofile");
+      return;
+    }
     if (profile.role === "admin" || profile.role === "operator") {
       window.location.href = "https://jobs.flexoafrica.com";
       return;

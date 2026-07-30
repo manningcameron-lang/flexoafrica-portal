@@ -14,7 +14,7 @@ const FILTERS = [
   {
     id: "production",
     label: "In production",
-    stages: ["artwork", "fa_po", "for_checking", "plates"],
+    stages: ["artwork", "fa_po", "for_checking", "plates", "shipping"],
   },
   { id: "invoiced", label: "Invoiced", stages: ["invoicing"] },
   { id: "complete", label: "Complete", stages: ["complete"] },

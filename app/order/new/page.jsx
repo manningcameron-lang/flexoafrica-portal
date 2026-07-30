@@ -244,7 +244,6 @@ export default function NewOrderPage() {
     subtotal,
     rushUplift: expressUplift,
     deliveryFee: deliveryFeeTotal,
-    deliveryPct: deliveryFeePctApplied,
     freeDeliveryShortfall,
     freeDeliveryThreshold,
     vat,
@@ -304,6 +303,8 @@ export default function NewOrderPage() {
       if (!(Number(li.widthCm) > 0)) return `Plate ${idx}: enter width.`;
       if (!(Number(li.heightCm) > 0)) return `Plate ${idx}: enter height.`;
       if (!li.pdfFile) return `Plate ${idx}: upload your artwork PDF.`;
+      if (li.pdfAnalysis && li.pdfAnalysis.ok === false)
+        return `Plate ${idx}: that file isn't a valid PDF — please upload a print-ready PDF.`;
     }
     return null;
   }
@@ -1316,7 +1317,7 @@ function PdfDropzone({ file, onChange }) {
       <div className="relative rounded-md border-2 border-dashed border-ink/20 hover:border-accent-500 transition-colors bg-ink/[0.02]">
         <input
           type="file"
-          accept="application/pdf,image/*"
+          accept="application/pdf,.pdf"
           onChange={(e) => onChange(e.target.files?.[0] || null)}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         />
@@ -1638,25 +1639,6 @@ function FastQuote({ total, subtotal, expressUplift, upliftPct, deliveryFee, vat
         Fast quote based on dimensions plus trim allowance. Final price confirmed when artwork is reviewed.
       </p>
     </div>
-  );
-}
-
-// ─── Reference plate illustration ─────────────────────────────────────────
-
-function PlateIllustration() {
-  return (
-    <svg viewBox="0 0 200 200" className="h-32 w-32" fill="none">
-      <defs>
-        <linearGradient id="plate-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FEE2E2" />
-          <stop offset="100%" stopColor="#FCA5A5" />
-        </linearGradient>
-      </defs>
-      <ellipse cx="100" cy="100" rx="80" ry="60" fill="url(#plate-grad)" stroke="#DC2626" strokeWidth="1.5" />
-      <ellipse cx="100" cy="95" rx="50" ry="35" fill="none" stroke="#991B1B" strokeWidth="1" opacity="0.4" />
-      <path d="M60 100 Q100 80 140 100 T180 100" stroke="#991B1B" strokeWidth="0.8" fill="none" opacity="0.3" />
-      <path d="M55 110 Q100 90 145 110" stroke="#991B1B" strokeWidth="0.8" fill="none" opacity="0.3" />
-    </svg>
   );
 }
 

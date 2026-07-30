@@ -16,7 +16,13 @@ export default function CustomerGuard({ children }) {
       router.replace("/login");
       return;
     }
-    if (!profile) return;
+    // loading is false here, so a null profile means the /users/{uid} doc
+    // genuinely doesn't exist (e.g. a broken signup) — don't spin forever;
+    // send them back to login with an explanation.
+    if (!profile) {
+      router.replace("/login?error=noprofile");
+      return;
+    }
     if (profile.role === "admin" || profile.role === "operator") {
       window.location.href = "https://jobs.flexoafrica.com";
       return;

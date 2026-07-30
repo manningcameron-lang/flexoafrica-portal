@@ -130,6 +130,14 @@ export async function POST(request) {
       );
       return NextResponse.json({ ok: true, duplicate: true });
     }
+    // Amount-mismatch is also terminal: once flagged for review, acknowledge
+    // duplicates without rewriting the flag fields on every PayFast retry.
+    if (order.paymentStatus === "amount_mismatch") {
+      console.log(
+        `PayFast ITN: order ${orderId} already flagged amount_mismatch, ignoring duplicate ITN`
+      );
+      return NextResponse.json({ ok: true, duplicate: true });
+    }
 
     // 7. Amount cross-check. Even with a valid signature we never trust the
     // amount alone — compare against the order total we stored at checkout
@@ -154,7 +162,9 @@ export async function POST(request) {
           2
         )}, PayFast reported R${paidAmount.toFixed(2)}`,
       });
-      return NextResponse.json({ error: "Amount mismatch" }, { status: 400 });
+      // Ack receipt (200) so PayFast stops retrying. The order is flagged for
+      // human review and is deliberately NOT marked paid.
+      return NextResponse.json({ ok: true, flagged: "amount_mismatch" });
     }
 
     // 8. All checks passed. Mark paid.

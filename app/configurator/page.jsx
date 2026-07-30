@@ -409,7 +409,7 @@ function SaveQuoteModal({ spec, price, onClose }) {
         {status === "success" ? (
           <div className="text-center">
             <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-50 text-green-600 text-2xl mb-3">
-              v
+              ✓
             </div>
             <h3 className="text-xl font-bold text-brand-900">Quote saved</h3>
             <p className="mt-2 text-brand-700">
