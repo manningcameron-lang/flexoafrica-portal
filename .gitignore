@@ -27,3 +27,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Deploy scripts + patches live in FA Job Dashboard, never in this repo
+*.command
+*.patch
