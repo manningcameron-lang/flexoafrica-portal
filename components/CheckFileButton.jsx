@@ -21,11 +21,17 @@ export default function CheckFileButton({ file, analysis }) {
       Date.now().toString(36);
     const url = "/check?id=" + encodeURIComponent(id);
     // Open the tab synchronously inside the click so pop-up blockers allow it,
-    // then stash the file for that tab to pick up.
-    const win = window.open(url, "_blank", "noopener");
+    // then stash the file for that tab to pick up. Note: do NOT pass "noopener"
+    // — that makes window.open return null even on success, which would trip
+    // the fallback below and navigate THIS (order) tab away.
+    const win = window.open(url, "_blank");
+    if (win) {
+      // Sever the opener link for safety without losing our success signal.
+      try { win.opener = null; } catch (e) {}
+    }
     stashCheckFile(id, file, { name: file.name }).catch(() => {});
     if (!win) {
-      // Pop-up blocked: fall back to opening in this tab.
+      // Pop-up genuinely blocked: fall back to opening in this tab.
       window.location.href = url;
     }
   }
