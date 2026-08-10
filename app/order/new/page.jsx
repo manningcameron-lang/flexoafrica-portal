@@ -24,6 +24,7 @@ import {
 } from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
 import { analyzePdfClient } from "@/lib/pdf-analyzer";
+import CheckFileButton from "@/components/CheckFileButton";
 
 function newLineItem() {
   return {
@@ -946,6 +947,15 @@ function PlateCard({ idx, lineItem, price, canRemove, onChange, onRemove }) {
             onToggleColor={toggleColor}
             platesFromColors={platesFromColors}
           />
+          {/* Open the WebCenter-style file checker in a new tab. Additive. */}
+          {lineItem.pdfAnalysis && lineItem.pdfAnalysis.ok && (
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <CheckFileButton file={lineItem.pdfFile} analysis={lineItem.pdfAnalysis} />
+              <span className="text-xs text-ink-muted">
+                Opens a viewer to check measurements, colours and each ink separation. Your order isn&rsquo;t changed.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Dimensions */}
