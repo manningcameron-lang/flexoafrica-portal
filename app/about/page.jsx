@@ -17,7 +17,7 @@ const FAQS = [
   },
   {
     q: "What is your turnaround time?",
-    a: "Standard turnaround is 48 to 72 hours from upload and approval. Need it faster? Add Express at checkout for 24 to 36 hour turnaround. Both clocks start the moment we have your file and you have approved the proof.",
+    a: "Standard turnaround is 48-72 hours from upload and approval. Need it faster? Add Express at checkout for 24-48 hour turnaround. Both clocks start the moment we have your file and you have approved the proof.",
   },
   {
     q: "How do payments work?",
@@ -98,8 +98,8 @@ export default function AboutPage() {
               <Row label="We deliver" value="Across Africa" />
               <Row label="We broker" value="Crystal, Surface Engineered, Standard" />
               <Row label="We do" value="Repro, plates, QA, delivery" />
-              <Row label="Standard turnaround" value="48 to 72 hours" />
-              <Row label="Express turnaround" value="24 to 36 hours" />
+              <Row label="Standard turnaround" value="48-72 hours" />
+              <Row label="Express turnaround" value="24-48 hours" />
             </dl>
           </aside>
         </div>

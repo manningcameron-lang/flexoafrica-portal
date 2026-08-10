@@ -172,13 +172,13 @@ export default function ConfiguratorPage() {
               <div className="grid sm:grid-cols-2 gap-3">
                 <TierToggle
                   label="Standard"
-                  sub="48 to 72 hours from upload + approval"
+                  sub="48-72 hours from upload + approval"
                   active={tier === "standard"}
                   onClick={() => setTier("standard")}
                 />
                 <TierToggle
                   label="Express"
-                  sub="24 to 36 hours after upload + approval, +25%"
+                  sub="24-48 hours after upload + approval, +10%"
                   active={tier === "express"}
                   onClick={() => setTier("express")}
                   accent

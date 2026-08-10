@@ -20,8 +20,8 @@ export default function HomePage() {
             </h1>
             <p className="mt-5 text-lg text-brand-700 max-w-lg">
               Live order tracking from order to delivery. Three plate tiers,
-              fourteen specs. Standard turnaround 48 to 72 hours, Express in
-              24 to 36.
+              fourteen specs. Standard turnaround 48-72 hours, Express in
+              24-48.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
@@ -121,19 +121,19 @@ export default function HomePage() {
               Turnaround
             </p>
             <h2 className="text-3xl font-bold text-brand-900">
-              Standard 48 to 72 hours. Express 24 to 36 hours.
+              Standard 48-72 hours. Express 24-48 hours.
             </h2>
             <p className="mt-4 text-brand-700">
               Both clocks start the moment we receive your file and you approve
-              the proof. Standard orders ship in 48 to 72 hours from upload and
-              approval. Need it now? Add Express at checkout for 24 to 36 hour
+              the proof. Standard orders ship in 48-72 hours from upload and
+              approval. Need it now? Add Express at checkout for 24-48 hour
               turnaround.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Stat label="Standard" value="48 to 72" unit="hours" />
-            <Stat label="Express" value="24 to 36" unit="hours" highlight />
+            <Stat label="Standard" value="48-72" unit="hours" />
+            <Stat label="Express" value="24-48" unit="hours" highlight />
           </div>
         </div>
       </section>

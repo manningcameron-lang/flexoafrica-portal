@@ -87,8 +87,8 @@ export default function TermsPage() {
         </Section>
 
         <Section title="6. Turnaround">
-          Standard turnaround is 48 to 72 hours from file upload and proof
-          approval. Express turnaround is 24 to 36 hours and carries an
+          Standard turnaround is 48-72 hours from file upload and proof
+          approval. Express turnaround is 24-48 hours and carries an
           uplift. The clock starts only once both your file is uploaded
           and your proof is approved. We do our best to meet these
           windows but cannot guarantee them where third-party suppliers

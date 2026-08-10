@@ -391,7 +391,7 @@ export default function NewOrderPage() {
           <div className="grid grid-cols-2 gap-3 text-center text-[11px]">
             <TrustBadge icon="handshake" title="Confidentiality" sub="on all your saved data" />
             <TrustBadge icon="shield" title="Secure SSL" sub="encrypted transactions" />
-            <TrustBadge icon="truck" title="48 to 72 hours" sub="standard turnaround" />
+            <TrustBadge icon="truck" title="48-72 hours" sub="standard turnaround" />
             <TrustBadge icon="qa" title="QA checked" sub="every plate before dispatch" />
           </div>
 

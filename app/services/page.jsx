@@ -3,7 +3,7 @@ import Link from "next/link";
 export const metadata = {
   title: "Services and plate types | Flexo Africa",
   description:
-    "Flexographic plates brokered by Flexo Africa. Crystal and standard photopolymer plate tiers, eight thickness specs covering flexible packaging, labels, corrugated. Repro and QA in-house. Express turnaround in 24 to 36 hours.",
+    "Flexographic plates brokered by Flexo Africa. Crystal and standard photopolymer plate tiers, eight thickness specs covering flexible packaging, labels, corrugated. Repro and QA in-house. Express turnaround in 24-48 hours.",
 };
 
 export default function ServicesPage() {
@@ -107,7 +107,7 @@ export default function ServicesPage() {
             />
             <Capability
               title="Express turnaround when you need it"
-              body="Standard plates ship in 48 to 72 hours from upload and approval. Need it now? Add Express for 24 to 36 hour turnaround on approved artwork."
+              body="Standard plates ship in 48-72 hours from upload and approval. Need it now? Add Express for 24-48 hour turnaround on approved artwork."
             />
             <Capability
               title="Legacy job records on file"
