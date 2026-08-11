@@ -21,7 +21,7 @@ const FAQS = [
   },
   {
     q: "How do payments work?",
-    a: "We support both account terms and card payment. Existing customers on account terms get 30 days from invoice. New customers can pay by card via Stripe at order time, or apply for an account when you sign up. We will let you know your terms when your account is activated.",
+    a: "We support both account terms and card payment. Existing customers on account terms get 30 days from invoice. New customers can pay by card via PayFast at order time, or apply for an account when you sign up. We will let you know your terms when your account is activated.",
   },
   {
     q: "What file formats do you accept for artwork?",
