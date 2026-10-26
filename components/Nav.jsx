@@ -15,7 +15,7 @@ const customerNav = [
   { href: "/order", label: "Place Order" },
   // AMBER repro intake. Customers also reach this by emailing
   // amber@flexoafrica.com, which drops their files straight onto this page.
-  { href: "/amber", label: "Order artwork" },
+  { href: "/amber", label: "Order Artwork" },
   // External: prepress tools sub-app at tools.flexoafrica.com.
   // `sso: true` flips the renderer into "fetch Firebase ID token, redirect
   // to /sso-login.html#firebaseToken=..." mode so the user lands signed in.

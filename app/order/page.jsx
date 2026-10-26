@@ -32,19 +32,19 @@ export default function OrderChoicePage() {
           <OrderChoiceCard
             href="/order/new"
             eyebrow="I have a plate-ready file"
-            title="Order plates"
+            title="Order Plates"
             price="Your account plate rate"
             lines={[
               "Your artwork is already separated and plate-ready",
               "Priced per plate as you build the order",
               "Pay by card, or on your purchase order if you have an account",
             ]}
-            cta="Order plates"
+            cta="Order Plates"
           />
           <OrderChoiceCard
             href="/amber"
             eyebrow="I need the artwork made first"
-            title="Order artwork"
+            title="Order Artwork"
             price={`R${AMBER_REPRO_PRICE_EXCL_VAT} a job, excl VAT`}
             lines={[
               "Send your print specifications and your artwork",
@@ -52,7 +52,7 @@ export default function OrderChoicePage() {
               `${AMBER_REPRO_REVISIONS_INCLUDED} rounds of changes included, and your first job is free`,
             ]}
             lead
-            cta="Order artwork"
+            cta="Order Artwork"
           />
         </div>
 
