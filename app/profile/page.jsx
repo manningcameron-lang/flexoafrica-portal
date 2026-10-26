@@ -6,6 +6,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { signOut, sendPasswordReset } from "@/lib/auth";
 import { updateMyProfile } from "@/lib/profile";
 import { formatDate } from "@/lib/jobs";
+import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 
 export default function ProfilePage() {
   const { user, profile } = useAuth();
@@ -29,11 +30,17 @@ export default function ProfilePage() {
     }
   }, [profile]);
 
+  const staff = isStaff(profile);
+
   async function handleSave(e) {
     e.preventDefault();
+    if (staff) {
+      setState({ status: "error", message: READ_ONLY_MESSAGE });
+      return;
+    }
     setState({ status: "submitting", message: "" });
     try {
-      await updateMyProfile({ uid: user.uid, patch: form });
+      await updateMyProfile({ uid: user.uid, patch: form, profile });
       setState({ status: "success", message: "Profile updated." });
     } catch (err) {
       setState({ status: "error", message: err.message || "Failed to update." });
@@ -138,11 +145,14 @@ export default function ProfilePage() {
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              disabled={state.status === "submitting"}
+              disabled={staff || state.status === "submitting"}
               className="btn-primary disabled:opacity-60"
             >
               {state.status === "submitting" ? "Saving..." : "Save changes"}
             </button>
+            {staff && (
+              <span data-staff-read-only className="text-sm text-ink-muted">{READ_ONLY_MESSAGE}</span>
+            )}
             {state.status === "success" && (
               <span className="text-sm text-logoGreen font-medium">{state.message}</span>
             )}

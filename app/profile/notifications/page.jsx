@@ -9,6 +9,7 @@ import {
   resolvePrefs,
   updateNotificationPreferences,
 } from "@/lib/profile";
+import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 
 /**
  * Notification preferences page.
@@ -35,13 +36,16 @@ export default function NotificationsPage() {
     if (profile) setPrefs(resolvePrefs(profile));
   }, [profile]);
 
+  const staff = isStaff(profile);
+
   async function handleToggle(key, nextValue) {
-    if (!prefs || !user?.uid) return;
+    // Staff looking at the portal cannot change the settings (read only).
+    if (!prefs || !user?.uid || staff) return;
     const optimistic = { ...prefs, [key]: nextValue };
     setPrefs(optimistic);
     setSaveStatus((s) => ({ ...s, [key]: "saving" }));
     try {
-      await updateNotificationPreferences({ uid: user.uid, prefs: optimistic });
+      await updateNotificationPreferences({ uid: user.uid, prefs: optimistic, profile });
       setSaveStatus((s) => ({ ...s, [key]: "saved" }));
       // Clear the "Saved" indicator after a moment so the row settles.
       setTimeout(() => {
@@ -69,6 +73,9 @@ export default function NotificationsPage() {
         Choose which emails Flexo Africa sends you. Account-level emails (sign-in,
         password reset) are always sent — these toggles cover job activity.
       </p>
+      {staff && (
+        <p data-staff-read-only className="mt-3 text-sm text-ink-muted">{READ_ONLY_MESSAGE}</p>
+      )}
 
       <section className="mt-10 card p-2 sm:p-2 divide-y divide-ink/5">
         {prefs == null ? (

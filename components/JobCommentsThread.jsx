@@ -6,6 +6,11 @@ import {
   postCustomerComment,
   subscribeJobComments,
 } from "@/lib/comments";
+import {
+  READ_ONLY_MESSAGE,
+  commentsAsCustomerSees,
+  isStaff,
+} from "@/lib/staff-view.mjs";
 
 /**
  * Threaded comments on a job. Lives on the Job Detail page, renders only
@@ -24,6 +29,10 @@ export default function JobCommentsThread({ job }) {
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState(null);
   const composerRef = useRef(null);
+  // Staff see the conversation exactly as the customer does (the team's
+  // internal notes left out) and cannot post into it. Cam 2026-10-26.
+  const staff = isStaff(profile);
+  const shown = staff ? commentsAsCustomerSees(comments) : comments;
 
   useEffect(() => {
     if (!job?.id) return;
@@ -43,7 +52,7 @@ export default function JobCommentsThread({ job }) {
   async function handleSubmit(e) {
     e?.preventDefault();
     const text = draft.trim();
-    if (!text || posting) return;
+    if (!text || posting || staff) return;
     setPosting(true);
     setError(null);
     try {
@@ -52,6 +61,7 @@ export default function JobCommentsThread({ job }) {
         text,
         author: {
           uid: user.uid,
+          role: profile?.role,
           contactName: profile?.contactName,
           company: profile?.company,
           email: user.email,
@@ -72,9 +82,9 @@ export default function JobCommentsThread({ job }) {
           Conversation
         </h2>
         <span className="text-xs text-ink-muted">
-          {comments.length === 0
+          {shown.length === 0
             ? "No messages yet"
-            : `${comments.length} message${comments.length === 1 ? "" : "s"}`}
+            : `${shown.length} message${shown.length === 1 ? "" : "s"}`}
         </span>
       </div>
 
@@ -83,14 +93,14 @@ export default function JobCommentsThread({ job }) {
         <div className="rounded-md border border-dashed border-ink/15 bg-brand-50 p-6 text-center text-sm text-ink-muted">
           Loading conversation...
         </div>
-      ) : comments.length === 0 ? (
+      ) : shown.length === 0 ? (
         <div className="rounded-md border border-dashed border-ink/15 bg-brand-50 p-6 text-sm text-ink-muted">
           No conversation yet. Use the box below to send a note about this job —
           our team gets an email immediately and replies in here.
         </div>
       ) : (
         <ul className="space-y-3">
-          {comments.map((c) => (
+          {shown.map((c) => (
             <li key={c.id}>
               <CommentBubble
                 comment={c}
@@ -101,7 +111,12 @@ export default function JobCommentsThread({ job }) {
         </ul>
       )}
 
-      {/* Composer */}
+      {/* Composer (customers only; staff get a note instead) */}
+      {staff ? (
+        <p data-staff-read-only className="mt-5 rounded-md border border-dashed border-ink/15 bg-brand-50 p-4 text-sm text-ink-muted">
+          {READ_ONLY_MESSAGE}
+        </p>
+      ) : (
       <form onSubmit={handleSubmit} className="mt-5">
         <label className="block">
           <span className="sr-only">Add a comment</span>
@@ -131,18 +146,18 @@ export default function JobCommentsThread({ job }) {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 }
 
 function CommentBubble({ comment, isMine }) {
-  const role = comment.authorRole || "customer";
-  const isStaff =
-    role === "operator" || role === "admin" || role === "designer";
+  // Was a Flexo Africa person the author? Same staff list as everywhere else.
+  const authorIsStaff = isStaff({ role: comment.authorRole || "customer" });
   const align = isMine ? "items-end" : "items-start";
   const bubble = isMine
     ? "bg-accent-500 text-white border-accent-500"
-    : isStaff
+    : authorIsStaff
       ? "bg-brand-50 text-ink border-ink/10"
       : "bg-white text-ink border-ink/10";
   const meta = isMine
@@ -158,7 +173,7 @@ function CommentBubble({ comment, isMine }) {
       </div>
       <div className={`text-[11px] ${meta}`}>
         <span className="font-medium">{comment.authorName || "Someone"}</span>
-        {isStaff && !isMine && (
+        {authorIsStaff && !isMine && (
           <span className="ml-1.5 inline-flex items-center rounded-full bg-ink/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-ink">
             Flexo Africa
           </span>

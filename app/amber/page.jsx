@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 import {
   ACCEPTED_EXTENSIONS,
   createSubmission,
@@ -52,6 +53,9 @@ function AmberPageInner() {
   const { user, profile } = useAuth();
   const params = useSearchParams();
   const idFromLink = params.get("id");
+  // Staff see the page read only: no job sheet is made, nothing is uploaded
+  // and Submit is off. The server refuses staff too. Cam 2026-10-26.
+  const staff = isStaff(profile);
 
   const [submissionId, setSubmissionId] = useState(idFromLink || null);
   const [mine, setMine] = useState([]);
@@ -73,7 +77,7 @@ function AmberPageInner() {
 
   // What this job will cost, and whether a PO number is compulsory.
   useEffect(() => {
-    if (!user) return;
+    if (!user || staff) return;
     let cancelled = false;
     (async () => {
       try {
@@ -88,19 +92,19 @@ function AmberPageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, staff]);
 
   const refresh = useCallback(async () => {
-    if (!user) return [];
+    if (!user || staff) return [];
     const items = await listSubmissions(user);
     setMine(items);
     return items;
-  }, [user]);
+  }, [user, staff]);
 
   // Load what this customer already has on the go, including artwork that came
   // in by email before they ever opened this page.
   useEffect(() => {
-    if (!user) return;
+    if (!user || staff) return;
     let cancelled = false;
     (async () => {
       try {
@@ -120,7 +124,7 @@ function AmberPageInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, idFromLink]);
+  }, [user, idFromLink, staff]);
 
   const poRequired = !!terms?.poRequired;
   const draft = useMemo(() => ({ spec, notSure, files }), [spec, notSure, files]);
@@ -137,6 +141,7 @@ function AmberPageInner() {
   }, [kind, terms]);
 
   const ensureSubmission = useCallback(async () => {
+    if (staff) throw new Error(READ_ONLY_MESSAGE);
     if (submissionId) return submissionId;
     // Always an artwork job. Plates go through Order Plates, which takes the
     // payment. The server enforces this too.
@@ -144,11 +149,16 @@ function AmberPageInner() {
     setSubmissionId(id);
     await refresh();
     return id;
-  }, [submissionId, user, kind, refresh]);
+  }, [submissionId, user, kind, refresh, staff]);
 
   async function onPickFiles(event) {
     const picked = Array.from(event.target.files || []);
     if (!picked.length) return;
+    if (staff) {
+      setError(READ_ONLY_MESSAGE);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -201,6 +211,10 @@ function AmberPageInner() {
   }
 
   async function onRemoveFile(path) {
+    if (staff) {
+      setError(READ_ONLY_MESSAGE);
+      return;
+    }
     setBusy(true);
     try {
       const after = await removeSubmissionFile({
@@ -216,6 +230,10 @@ function AmberPageInner() {
   }
 
   async function onSubmit() {
+    if (staff) {
+      setError(READ_ONLY_MESSAGE);
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -336,7 +354,7 @@ function AmberPageInner() {
           multiple
           accept={ACCEPTED_EXTENSIONS.join(",")}
           onChange={onPickFiles}
-          disabled={busy}
+          disabled={staff || busy}
           className="mt-3 block text-sm"
         />
         <p className="mt-1 text-sm text-ink">
@@ -479,12 +497,15 @@ function AmberPageInner() {
 
         <button
           type="button"
-          disabled={busy || missing.length > 0}
+          disabled={staff || busy || missing.length > 0}
           onClick={onSubmit}
           className="mt-5 px-5 py-2.5 bg-accent-500 text-white rounded-md font-semibold disabled:opacity-40"
         >
           {busy ? "Sending..." : "Submit to AMBER"}
         </button>
+        {staff && (
+          <p data-staff-read-only className="mt-2 text-sm text-ink-muted">{READ_ONLY_MESSAGE}</p>
+        )}
       </section>
 
       {mine.filter((s) => s.jobNumber).length > 0 && (

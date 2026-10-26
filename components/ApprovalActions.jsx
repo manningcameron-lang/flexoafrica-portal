@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { submitApproval } from "@/lib/approvals";
 import { useAuth } from "./AuthProvider";
+import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 
 // Shown only when job.stage === "pdf_sent".
 // Customer can Approve (continues to FA PO) or Reject (loops back to Artwork).
@@ -11,6 +12,20 @@ export default function ApprovalActions({ job }) {
   const [state, setState] = useState({ status: "idle", message: "" });
   const [note, setNote] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
+
+  // Staff looking at the portal see that a proof is waiting, but get no
+  // Approve or Request changes buttons: the job system would act on them and
+  // move the customer's real job on. Cam 2026-10-26.
+  if (isStaff(profile)) {
+    return (
+      <div data-staff-read-only className="rounded-xl border border-logoOrange/30 bg-logoOrange/5 p-6">
+        <h3 className="font-semibold text-ink">Awaiting the customer's approval</h3>
+        <p className="mt-1 text-sm text-ink-muted">
+          The customer sees Approve proof and Request changes buttons here. {READ_ONLY_MESSAGE}
+        </p>
+      </div>
+    );
+  }
 
   async function handleApprove() {
     if (!confirm("Approve this proof? We'll proceed to plate ordering.")) return;

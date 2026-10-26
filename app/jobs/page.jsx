@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { subscribeJobsForCustomer } from "@/lib/jobs";
 import JobCard from "@/components/JobCard";
 import { STAGES } from "@/lib/stages";
+import { isStaff } from "@/lib/staff-view.mjs";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -32,6 +33,13 @@ export default function MyJobsPage() {
 
   useEffect(() => {
     // Per-company isolation: subscribe by user.company.
+    // A staff login with no company has no jobs of its own: show the empty
+    // list instead of "loading" for ever.
+    if (user?.uid && isStaff(profile) && !profile?.company) {
+      setJobs([]);
+      setLoading(false);
+      return;
+    }
     if (!user?.uid || !profile?.company) return;
     setLoading(true);
     const unsub = subscribeJobsForCustomer(profile.company, (items, err) => {

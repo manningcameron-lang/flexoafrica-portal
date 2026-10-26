@@ -3,35 +3,23 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
+import { publicPageRedirect } from "@/lib/staff-view.mjs";
 
 /**
- * When mounted on a public marketing page (e.g. the home page), this
- * component checks the auth state and redirects an already-signed-in
- * customer to their dashboard. Operators/admins are sent to the MIS.
+ * On a public page (home, sign in, sign up): an already-signed-in customer is
+ * taken to their dashboard. Staff stay on the page so they can see it as a
+ * visitor would. The rule lives in lib/staff-view.mjs.
  *
  * Returns null so it has no visual impact.
  */
 export default function RedirectIfSignedIn() {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const to = publicPageRedirect({ user, profile, loading });
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) return;
-    // Operators/admins live in the MIS, not the portal.
-    if (profile?.role === "admin" || profile?.role === "operator") {
-      window.location.href = "https://jobs.flexoafrica.com";
-      return;
-    }
-    if (profile?.role !== "customer") return;
-    if (profile?.status === "pending") {
-      router.replace("/awaiting-approval");
-    } else if (profile?.status === "suspended") {
-      router.replace("/suspended");
-    } else if (profile?.status === "active") {
-      router.replace("/dashboard");
-    }
-  }, [user, profile, loading, router]);
+    if (to) router.replace(to);
+  }, [to, router]);
 
   return null;
 }

@@ -3,55 +3,25 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
+import { customerPageGate } from "@/lib/staff-view.mjs";
 
-// Shared auth gate for customer-only routes (/dashboard, /jobs, /profile).
-// Mirrors the logic in /app/dashboard/layout.jsx.
-export default function CustomerGuard({ children }) {
+// Shared gate for customer-only pages (/dashboard, /jobs, /profile, /order,
+// /amber, /check). Who sees what is decided in lib/staff-view.mjs and nowhere
+// else. Staff (admin, operator, designer) see the page READ ONLY; they are no
+// longer sent to the job system. Cam 2026-10-26.
+export default function CustomerGuard({ children, loadingText = "Loading..." }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const gate = customerPageGate({ user, profile, loading });
 
   useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    // loading is false here, so a null profile means the /users/{uid} doc
-    // genuinely doesn't exist (e.g. a broken signup) — don't spin forever;
-    // send them back to login with an explanation.
-    if (!profile) {
-      router.replace("/login?error=noprofile");
-      return;
-    }
-    if (profile.role === "admin" || profile.role === "operator") {
-      window.location.href = "https://jobs.flexoafrica.com";
-      return;
-    }
-    if (profile.role !== "customer") {
-      router.replace("/login?error=role");
-      return;
-    }
-    if (profile.status === "pending") {
-      router.replace("/awaiting-approval");
-      return;
-    }
-    if (profile.status === "suspended") {
-      router.replace("/suspended");
-      return;
-    }
-  }, [user, profile, loading, router]);
+    if (gate.to) router.replace(gate.to);
+  }, [gate.to, router]);
 
-  const ready =
-    !loading &&
-    !!user &&
-    !!profile &&
-    profile.role === "customer" &&
-    profile.status === "active";
-
-  if (!ready) {
+  if (!gate.show) {
     return (
       <div className="max-w-page mx-auto px-4 sm:px-6 py-20 text-center text-ink-muted">
-        Loading...
+        {loadingText}
       </div>
     );
   }
