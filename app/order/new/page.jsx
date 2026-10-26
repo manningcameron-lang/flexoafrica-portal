@@ -23,6 +23,7 @@ import {
   formatZAR,
 } from "@/lib/pricing";
 import { createOrderFromPortal } from "@/lib/orders";
+import { READ_ONLY_MESSAGE, customerPageGate } from "@/lib/staff-view.mjs";
 import { analyzePdfClient } from "@/lib/pdf-analyzer";
 import CheckFileButton from "@/components/CheckFileButton";
 
@@ -113,17 +114,13 @@ export default function NewOrderPage() {
   const [submitProgress, setSubmitProgress] = useState("");
   const [error, setError] = useState(null);
 
-  // Auth gate
+  // Auth gate: the same rule as every customer page (lib/staff-view.mjs).
+  // Staff see the page read only and cannot place an order.
+  const gate = customerPageGate({ user, profile, loading });
+  const staff = gate.staff;
   useEffect(() => {
-    if (loading) return;
-    if (!user) router.replace("/login");
-    else if (profile && profile.role !== "customer")
-      router.replace("/login?error=role");
-    else if (profile && profile.status !== "active")
-      router.replace(
-        profile.status === "pending" ? "/awaiting-approval" : "/suspended"
-      );
-  }, [user, profile, loading, router]);
+    if (gate.to) router.replace(gate.to);
+  }, [gate.to, router]);
 
   // Auto-populate delivery address. Prefers the customer's saved default
   // (Profile → Default delivery address), then the company address on the MIS
@@ -313,6 +310,10 @@ export default function NewOrderPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    if (staff) {
+      setError(READ_ONLY_MESSAGE);
+      return;
+    }
     const v = validate();
     if (v) {
       setError(v);
@@ -349,7 +350,7 @@ export default function NewOrderPage() {
     }
   }
 
-  if (loading || !profile || profile.status !== "active") {
+  if (!gate.show) {
     return (
       <div className="max-w-page mx-auto px-4 sm:px-6 py-20 text-center text-ink-muted">
         Loading...
@@ -644,11 +645,16 @@ export default function NewOrderPage() {
                 <div className="flex flex-col gap-2 sm:items-end">
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={staff || submitting}
                     className="px-6 py-3 bg-accent-500 hover:bg-accent-600 disabled:opacity-50 text-white font-semibold rounded-md whitespace-nowrap"
                   >
                     {submitting ? "Placing order..." : "Confirm and place order"}
                   </button>
+                  {staff && (
+                    <div data-staff-read-only className="text-xs text-white/70 max-w-xs">
+                      {READ_ONLY_MESSAGE}
+                    </div>
+                  )}
                   {submitProgress && (
                     <div className="text-xs text-white/70">{submitProgress}</div>
                   )}

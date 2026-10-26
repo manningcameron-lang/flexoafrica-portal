@@ -5,6 +5,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { signOut } from "@/lib/auth";
+import { showsSignedInMenu } from "@/lib/staff-view.mjs";
 
 const customerNav = [
   { href: "/dashboard", label: "Dashboard" },
@@ -103,7 +104,8 @@ export default function Nav() {
   const { user, profile, loading } = useAuth();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const isSignedIn = !!user && !loading && profile?.status === "active";
+  // Active customers and staff (read only view) get the signed-in menu.
+  const isSignedIn = showsSignedInMenu({ user, profile, loading });
   const nav = isSignedIn ? customerNav : publicNav;
 
   return (

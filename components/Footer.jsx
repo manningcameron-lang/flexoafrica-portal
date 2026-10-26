@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useAuth } from "./AuthProvider";
+import { showsSignedInMenu } from "@/lib/staff-view.mjs";
 
 const PHONE = "+27 72 665 2041";
 const PHONE_TEL = "+27726652041";
@@ -15,7 +16,7 @@ export default function Footer() {
   // actually active. Pending/suspended users should still see the public
   // links so they have somewhere to land.
   const { user, profile, loading } = useAuth();
-  const isSignedIn = !!user && !loading && profile?.status === "active";
+  const isSignedIn = showsSignedInMenu({ user, profile, loading });
 
   return (
     <footer className="bg-ink text-white mt-24">

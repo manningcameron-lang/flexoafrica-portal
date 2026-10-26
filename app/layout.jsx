@@ -3,6 +3,7 @@ import "./globals.css";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
 import { AuthProvider } from "../components/AuthProvider";
+import StaffBanner from "../components/StaffBanner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -37,6 +38,7 @@ export default function RootLayout({ children }) {
     <html lang="en" className={inter.variable}>
       <body className="font-sans text-ink bg-white antialiased">
         <AuthProvider>
+          <StaffBanner />
           <Nav />
           <main className="min-h-[60vh]">{children}</main>
           <Footer />

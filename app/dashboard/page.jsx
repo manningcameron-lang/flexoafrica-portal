@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { subscribeJobsForCustomer, bucketJobs } from "@/lib/jobs";
 import JobCard from "@/components/JobCard";
+import { isStaff } from "@/lib/staff-view.mjs";
 
 export default function DashboardPage() {
   const { user, profile } = useAuth();
@@ -16,6 +17,13 @@ export default function DashboardPage() {
     // Per-company isolation: subscribe by the user's company string.
     // Wait until profile.company is loaded — pre-AuthProvider state can
     // momentarily flip user.uid to true with profile still null.
+    // A staff login with no company has no jobs of its own: show the empty
+    // dashboard instead of "loading" for ever.
+    if (user?.uid && isStaff(profile) && !profile?.company) {
+      setJobs([]);
+      setLoading(false);
+      return;
+    }
     if (!user?.uid || !profile?.company) return;
     setLoading(true);
     const unsub = subscribeJobsForCustomer(profile.company, (items, err) => {

@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
+import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 
 // Next.js 14 requires useSearchParams to be inside a Suspense boundary.
 export default function OrderSuccessPage() {
@@ -88,6 +89,12 @@ function OrderSuccessPageInner() {
 
   async function handlePayNow() {
     if (!order || paying) return;
+    // Staff looking at the portal never start a card payment. The server
+    // refuses anyone who did not place the order as well.
+    if (isStaff(profile)) {
+      setPayError(READ_ONLY_MESSAGE);
+      return;
+    }
     setPaying(true);
     setPayError(null);
 

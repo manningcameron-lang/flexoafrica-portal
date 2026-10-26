@@ -1,57 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/AuthProvider";
+import CustomerGuard from "@/components/CustomerGuard";
 
+// Same gate as every other customer page (lib/staff-view.mjs). This used to
+// keep its own copy of the rules, which is how two pages can end up behaving
+// differently.
 export default function DashboardLayout({ children }) {
-  const { user, profile, loading } = useAuth();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    // loading is false here, so a null profile means the /users/{uid} doc
-    // genuinely doesn't exist — don't spin forever; send them back to login.
-    if (!profile) {
-      router.replace("/login?error=noprofile");
-      return;
-    }
-    if (profile.role === "admin" || profile.role === "operator") {
-      window.location.href = "https://jobs.flexoafrica.com";
-      return;
-    }
-    if (profile.role !== "customer") {
-      router.replace("/login?error=role");
-      return;
-    }
-    if (profile.status === "pending") {
-      router.replace("/awaiting-approval");
-      return;
-    }
-    if (profile.status === "suspended") {
-      router.replace("/suspended");
-      return;
-    }
-  }, [user, profile, loading, router]);
-
-  const ready =
-    !loading &&
-    !!user &&
-    !!profile &&
-    profile.role === "customer" &&
-    profile.status === "active";
-
-  if (!ready) {
-    return (
-      <div className="max-w-page mx-auto px-4 sm:px-6 py-20 text-center text-brand-600">
-        Loading your dashboard...
-      </div>
-    );
-  }
-
-  return <>{children}</>;
+  return <CustomerGuard loadingText="Loading your dashboard...">{children}</CustomerGuard>;
 }
