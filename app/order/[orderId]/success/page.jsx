@@ -223,7 +223,7 @@ function OrderSuccessPageInner() {
               Go to dashboard
             </Link>
             <Link
-              href="/order/new"
+              href="/order"
               className="px-5 py-3 bg-white border border-brand-200 hover:bg-brand-50 text-brand-800 font-medium rounded-md"
             >
               Place another order

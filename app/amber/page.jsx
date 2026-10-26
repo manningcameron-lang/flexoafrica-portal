@@ -341,6 +341,11 @@ function AmberPageInner() {
           disabled={busy}
           className="mt-3 block text-sm"
         />
+        <p className="mt-1 text-sm text-ink">
+          Easiest is <strong>one zip folder</strong> holding the artwork and
+          everything it needs: linked images, logos and fonts. A single PDF is
+          fine too.
+        </p>
         <p className="mt-1 text-xs text-ink-muted">
           PDF, AI, EPS, PSD, TIFF, ZIP and fonts. Up to 300 MB a file, 1 GB a job.
         </p>

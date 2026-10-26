@@ -87,7 +87,7 @@ export default function MyJobsPage() {
             {jobs.length} {jobs.length === 1 ? "job" : "jobs"} on your account
           </p>
         </div>
-        <Link href="/order/new" className="btn-primary">
+        <Link href="/order" className="btn-primary">
           Place new order
         </Link>
       </div>
@@ -166,7 +166,7 @@ function EmptyState() {
       <p className="mt-2 text-ink-muted">
         When you place your first order, you'll see live status here for every plate.
       </p>
-      <Link href="/order/new" className="btn-primary mt-6 inline-flex">
+      <Link href="/order" className="btn-primary mt-6 inline-flex">
         Place your first order
       </Link>
     </div>

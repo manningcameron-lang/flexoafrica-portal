@@ -12,7 +12,7 @@
 // Run with:  npm run mutate
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const MUTATIONS = [
@@ -231,15 +231,124 @@ const MUTATIONS = [
     find: "        copyTo: [SALES_INBOX],",
     replace: "        copyTo: [],",
   },
+
+  // ─── plate order → FA jobs (one job per LINE, never per colour) ───────────
+  {
+    label: "only the first colour on a line gets a plate",
+    file: "lib/order-jobs.mjs",
+    find: "  return keys.map((key) => ({",
+    replace: "  return keys.slice(0, 1).map((key) => ({",
+  },
+  {
+    label: "colours are no longer listed in printing order",
+    file: "lib/order-jobs.mjs",
+    find: "  return [...process, ...spots];",
+    replace: "  return ticked;",
+  },
+  {
+    label: "an unticked colour box counts as a colour",
+    file: "lib/order-jobs.mjs",
+    find: "  const ticked = Object.keys(selected).filter((key) => selected[key]);",
+    replace: "  const ticked = Object.keys(selected);",
+  },
+  {
+    label: "the colour list is bolted onto every job name again",
+    file: "lib/order-jobs.mjs",
+    find: "  if (colours.length > MAX_COLOURS_ON_A_JOB_SHEET) {",
+    replace: "  if (colours.length > 0) {",
+  },
+  {
+    label: "centimetres are no longer turned into millimetres",
+    file: "lib/order-jobs.mjs",
+    find: "  return Number.isFinite(n) && n > 0 ? n * 10 : 0;",
+    replace: "  return Number.isFinite(n) && n > 0 ? n : 0;",
+  },
+  {
+    label: "a missing or negative plate size is let through as rubbish",
+    file: "lib/order-jobs.mjs",
+    find: "  return Number.isFinite(n) && n > 0 ? n * 10 : 0;",
+    replace: "  return Number(value) * 10;",
+  },
+  {
+    label: "a line with no colours ticked gets no plate row at all",
+    file: "lib/order-jobs.mjs",
+    find: '    return [{ key: "", colour: "", width: widthMm, length: lengthMm, active: true }];',
+    replace: "    return [];",
+  },
+  {
+    label: "the job sheet is said to hold 99 colours",
+    file: "lib/order-jobs.mjs",
+    find: "export const MAX_COLOURS_ON_A_JOB_SHEET = 10;",
+    replace: "export const MAX_COLOURS_ON_A_JOB_SHEET = 99;",
+  },
+  {
+    label: "a colour name we do not recognise is silently dropped",
+    file: "lib/order-jobs.mjs",
+    find: '  if (key.startsWith("spot:")) return key.slice(5);\n  return key;',
+    replace: '  if (key.startsWith("spot:")) return key.slice(5);\n  return "";',
+  },
+  {
+    label: "yellow and black are swapped",
+    file: "lib/order-jobs.mjs",
+    find: 'const PROCESS_NAMES = { C: "Cyan", M: "Magenta", Y: "Yellow", K: "Black" };',
+    replace: 'const PROCESS_NAMES = { C: "Cyan", M: "Magenta", Y: "Black", K: "Yellow" };',
+  },
+  {
+    label: "every job claims to come from the first line",
+    file: "lib/order-jobs.mjs",
+    find: "    lineIndex: index,",
+    replace: "    lineIndex: 0,",
+  },
+  {
+    label: "plate rows arrive switched off",
+    file: "lib/order-jobs.mjs",
+    find: "    active: true,\n  }));",
+    replace: "    active: false,\n  }));",
+  },
+  {
+    label: "the customer's own job name is ignored",
+    file: "lib/order-jobs.mjs",
+    find: '    String(lineItem?.description || "").trim() ||',
+    replace: '    "" ||',
+  },
+
+  {
+    label: "a plate line takes a second FA job number",
+    file: "app/api/orders/create/route.js",
+    find: "      const jobNumberInt = await nextNumber(adminDb, jobCounter);",
+    replace: "      const jobNumberInt = await twiceNextNumber(adminDb, jobCounter);",
+  },
+  {
+    label: "the route stops using the one-job-per-line rule",
+    file: "app/api/orders/create/route.js",
+    find: "    const plannedJobs = jobsForOrder(",
+    replace: "    const plannedJobs = perColourJobs(",
+  },
 ];
 
 function hash(text) {
   return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
 
+// Run EVERY test file, found on disk, exactly as `npm test` does.
+//
+// This used to name tests/amber.test.mjs on its own. That meant a new test
+// file was invisible here, so mutation testing silently stopped covering it
+// and every break in the new code looked like it survived. Found 26 Oct 2026
+// while adding the plate-order tests. Never hard-code the list again.
+const TEST_FILES = readdirSync("tests")
+  .filter((name) => name.endsWith(".test.mjs"))
+  .sort()
+  .map((name) => `tests/${name}`);
+
+if (TEST_FILES.length === 0) {
+  console.error("FAILED: no test files found in tests/ — nothing to mutate against.");
+  process.exit(1);
+}
+
 function suitePasses() {
   try {
-    execFileSync("node", ["--test", "tests/amber.test.mjs"], { stdio: "pipe" });
+    execFileSync("node", ["--test", ...TEST_FILES], { stdio: "pipe" });
     return true;
   } catch {
     return false;

@@ -5,6 +5,7 @@ import { PLATE_TYPES, SUBSTRATE_OPTIONS, TURNAROUND_TIERS, tierRateFor } from "@
 import { priceLineItems, calcOrderTotals } from "@/lib/pricing";
 import { matchCustomer } from "@/lib/company-match";
 import { PORTAL_DEMO_MODE, formatOrderNumber, formatJobNumber } from "@/lib/order-format";
+import { jobsForOrder } from "@/lib/order-jobs.mjs";
 
 /**
  * POST /api/orders/create
@@ -22,6 +23,9 @@ import { PORTAL_DEMO_MODE, formatOrderNumber, formatJobNumber } from "@/lib/orde
  * write their own orderTotalIncVat (pay R1 for a R5,000 order — the PayFast ITN
  * cross-check compared the payment against a figure the customer supplied) or
  * set paymentTerms:"po" to skip payment entirely. Cam 2026-07-14.
+ *
+ * ONE FA JOB PER PLATE LINE. A four-colour line is one job with four plates,
+ * not four jobs. See lib/order-jobs.mjs. Cam 2026-10-26.
  *
  * The client still uploads the artwork PDFs and the PO document to Storage
  * (rules-guarded, and the bytes are the customer's own), and passes us the
@@ -159,151 +163,157 @@ export async function POST(request) {
       jobIds: [],
     });
 
-    // ─── 6. One job per ticked colour, MIS-compatible schema ─────────────
+    // ─── 6. ONE JOB PER PLATE LINE, MIS-compatible schema ────────────────
+    // NOT one per colour. A plate line is one piece of artwork, so it is one
+    // FA job, and the colours ticked on it are that job's colours and plates.
+    // lib/order-jobs.mjs holds the rule and the reason. Cam 2026-10-26.
+    const plannedJobs = jobsForOrder(
+      lineItems,
+      lineItems.map((li) => {
+        const plateType = PLATE_TYPES.find((p) => p.id === li.plateTypeId);
+        return `${plateType.name} ${li.widthCm}x${li.heightCm}cm`;
+      })
+    );
+
     const createdJobs = [];
-    for (const li of lineItems) {
+    for (let lineIdx = 0; lineIdx < lineItems.length; lineIdx++) {
+      const li = lineItems[lineIdx];
+      const planned = plannedJobs[lineIdx];
       const plateType = PLATE_TYPES.find((p) => p.id === li.plateTypeId);
       // The rate we actually charge for this line's plate type. Crystal is the
       // flat premium rate; everything else is the customer's rate. Stored on
       // the job so MIS shows the real sell rate, not the account base.
       const jobRate = tierRateFor(li.plateTypeId, ratePerCm2);
-      const sel = li.selectedColors || {};
-      const colourKeys = Object.keys(sel).filter((k) => sel[k]);
-      const platesToCreate =
-        colourKeys.length > 0
-          ? colourKeys.map((key) => ({ key, label: labelForColorKey(key) }))
-          : [{ key: "", label: "" }];
 
       // The client already uploaded the PDF under jobs/{preAllocatedJobId}/…
-      // Reuse that id for the first plate so the storage path still matches.
+      // Reuse that id so the storage path still matches.
       const pdfMeta = li.pdfMeta || null;
       const preAllocatedJobId = li.preAllocatedJobId || null;
 
-      for (let plateIdx = 0; plateIdx < platesToCreate.length; plateIdx++) {
-        const plate = platesToCreate[plateIdx];
-        const jobNumberInt = await nextNumber(adminDb, jobCounter);
-        const jobName = formatJobNumber(jobNumberInt);
+      const jobNumberInt = await nextNumber(adminDb, jobCounter);
+      const jobName = formatJobNumber(jobNumberInt);
 
-        let jobRef =
-          plateIdx === 0 && preAllocatedJobId
-            ? adminDb.collection("jobs").doc(preAllocatedJobId)
-            : adminDb.collection("jobs").doc();
+      let jobRef = preAllocatedJobId
+        ? adminDb.collection("jobs").doc(preAllocatedJobId)
+        : adminDb.collection("jobs").doc();
 
-        const baseDesc =
-          li.description ||
-          li.specialInstructions ||
-          `${plateType.name} ${li.widthCm}x${li.heightCm}cm`;
-        const fullDesc = plate.label ? `${baseDesc} - ${plate.label}` : baseDesc;
+      const jobData = {
+        jobName,
+        jobNumberInt,
+        stage: "artwork",
+        priority,
+        customer: company || profile.contactName || "Portal customer",
+        printer: "",
+        description: planned.description,
+        dueDate: header.requiredByDate || "",
+        plateThickness: plateType.thicknessMm.toFixed(2) + " mm",
+        screenRuling: li.screenRuling || "",
+        material: SUBSTRATE_OPTIONS.find((s) => s.id === li.substrate)?.label || "",
+        bagType: "",
+        cylinder: li.cylinderSize || "",
+        plateDistortion: "",
+        printDirection: "",
+        printSide: li.printSide
+          ? li.printSide.charAt(0).toUpperCase() + li.printSide.slice(1)
+          : "",
+        inkType: li.inkType || "",
+        widthMm: String(Number(li.widthCm) * 10),
+        pitchMm: String(Number(li.heightCm) * 10),
+        across: "",
+        around: "",
+        barcode: "",
+        // Every colour on this line, in printing order.
+        colours: planned.colours,
+        sellRate: jobRate ?? null,
+        totalSell: 0,
+        totalCost: 0,
+        margin: null,
+        invoiceNumber: "",
+        invoiced: false,
+        paid: false,
+        // One plate row per ticked colour.
+        plates: planned.plates.map((plate) => ({
+          colour: plate.colour,
+          width: plate.width,
+          length: plate.length,
+          active: plate.active,
+        })),
+        revisions: [],
+        reproServices: [],
+        legacy: false,
+        historical: false,
 
-        const jobData = {
-          jobName,
-          jobNumberInt,
-          stage: "artwork",
-          priority,
-          customer: company || profile.contactName || "Portal customer",
-          printer: "",
-          description: fullDesc,
-          dueDate: header.requiredByDate || "",
-          plateThickness: plateType.thicknessMm.toFixed(2) + " mm",
-          screenRuling: li.screenRuling || "",
-          material: SUBSTRATE_OPTIONS.find((s) => s.id === li.substrate)?.label || "",
-          bagType: "",
-          cylinder: li.cylinderSize || "",
-          plateDistortion: "",
-          printDirection: "",
-          printSide: li.printSide
-            ? li.printSide.charAt(0).toUpperCase() + li.printSide.slice(1)
-            : "",
-          inkType: li.inkType || "",
-          widthMm: String(Number(li.widthCm) * 10),
-          pitchMm: String(Number(li.heightCm) * 10),
-          across: "",
-          around: "",
-          barcode: "",
-          colours: plate.label ? [plate.label] : [],
-          sellRate: jobRate ?? null,
-          totalSell: 0,
-          totalCost: 0,
-          margin: null,
-          invoiceNumber: "",
-          invoiced: false,
-          paid: false,
-          plates: [
-            {
-              colour: plate.label || "",
-              width: Number(li.widthCm) * 10,
-              length: Number(li.heightCm) * 10,
-              active: true,
-            },
-          ],
-          revisions: [],
-          reproServices: [],
-          legacy: false,
-          historical: false,
+        source: "portal",
+        demo: PORTAL_DEMO_MODE,
+        orderId: orderRef.id,
+        orderNumber,
+        customerUid: decoded.uid,
+        customerCompany: company,
+        customerContactName: profile.contactName || "",
+        customerEmail: profile.email || decoded.email || "",
+        plateTier: plateType.tier,
+        plateTypeId: plateType.id,
+        plateTypeName: plateType.name,
+        portalQty: Number(li.qty) || 1,
+        portalWidthCm: Number(li.widthCm),
+        portalHeightCm: Number(li.heightCm),
+        portalSubstrate: li.substrate || "",
+        // Lists now, because one job covers every colour on the line. The two
+        // older singular fields are kept and filled with the WHOLE list joined
+        // up, so anything still reading them shows all the colours instead of
+        // only the first one.
+        portalColourKeys: planned.colourKeys,
+        portalColourLabels: planned.colours,
+        portalColourKey: planned.colourKeys.join(","),
+        portalColourLabel: planned.colours.join(", "),
+        portalPlateCount: planned.plates.length,
+        portalCustomerDescription: li.description || "",
 
-          source: "portal",
-          demo: PORTAL_DEMO_MODE,
-          orderId: orderRef.id,
-          orderNumber,
-          customerUid: decoded.uid,
-          customerCompany: company,
-          customerContactName: profile.contactName || "",
-          customerEmail: profile.email || decoded.email || "",
-          plateTier: plateType.tier,
-          plateTypeId: plateType.id,
-          plateTypeName: plateType.name,
-          portalQty: Number(li.qty) || 1,
-          portalWidthCm: Number(li.widthCm),
-          portalHeightCm: Number(li.heightCm),
-          portalSubstrate: li.substrate || "",
-          portalColourKey: plate.key,
-          portalColourLabel: plate.label,
-          portalCustomerDescription: li.description || "",
+        // Delivery / order context denormalised onto the job so MIS operators
+        // see it without opening the order. deliveryAddress + deliveryMethod
+        // live on the order doc; the job schema has no delivery field of its
+        // own (MIS captures "Deliver To" at delivery-note time), so we mirror
+        // it here. Collection orders carry an explicit human-readable summary.
+        portalDeliveryMethod: deliveryMethod,
+        portalDeliveryAddress:
+          deliveryMethod === "collection"
+            ? ""
+            : String(header.deliveryAddress || "").trim(),
+        portalDeliverySummary:
+          deliveryMethod === "collection"
+            ? "Customer to collect"
+            : String(header.deliveryAddress || "").trim() ||
+              "Delivery — no address supplied",
+        portalRequiredByDate: header.requiredByDate || "",
+        portalPoNumber: String(header.poNumber || "").trim(),
+        portalPaymentTerms: paymentTerms,
 
-          // Delivery / order context denormalised onto the job so MIS operators
-          // see it without opening the order. deliveryAddress + deliveryMethod
-          // live on the order doc; the job schema has no delivery field of its
-          // own (MIS captures "Deliver To" at delivery-note time), so we mirror
-          // it here. Collection orders carry an explicit human-readable summary.
-          portalDeliveryMethod: deliveryMethod,
-          portalDeliveryAddress:
-            deliveryMethod === "collection"
-              ? ""
-              : String(header.deliveryAddress || "").trim(),
-          portalDeliverySummary:
-            deliveryMethod === "collection"
-              ? "Customer to collect"
-              : String(header.deliveryAddress || "").trim() ||
-                "Delivery — no address supplied",
-          portalRequiredByDate: header.requiredByDate || "",
-          portalPoNumber: String(header.poNumber || "").trim(),
-          portalPaymentTerms: paymentTerms,
+        pdfUrls: pdfMeta ? [pdfMeta] : [],
 
-          pdfUrls: pdfMeta ? [pdfMeta] : [],
+        createdBy: decoded.uid,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
 
-          createdBy: decoded.uid,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        };
-
-        // Use create() (never set()) so a client-supplied preAllocatedJobId can
-        // never OVERWRITE an existing job doc. A freshly pre-allocated id can't
-        // collide; if it does, the id was not ours (e.g. someone else's job) —
-        // fall back to a new server-generated id instead of clobbering it.
-        try {
-          await jobRef.create(jobData);
-        } catch (e) {
-          jobRef = adminDb.collection("jobs").doc();
-          await jobRef.create(jobData);
-        }
-
-        createdJobs.push({
-          jobId: jobRef.id,
-          jobName,
-          jobNumberInt,
-          colourLabel: plate.label,
-        });
+      // Use create() (never set()) so a client-supplied preAllocatedJobId can
+      // never OVERWRITE an existing job doc. A freshly pre-allocated id can't
+      // collide; if it does, the id was not ours (e.g. someone else's job) —
+      // fall back to a new server-generated id instead of clobbering it.
+      try {
+        await jobRef.create(jobData);
+      } catch (e) {
+        jobRef = adminDb.collection("jobs").doc();
+        await jobRef.create(jobData);
       }
+
+      createdJobs.push({
+        jobId: jobRef.id,
+        jobName,
+        jobNumberInt,
+        colourLabel: planned.colours.join(", "),
+        colours: planned.colours,
+        plateCount: planned.plates.length,
+      });
     }
 
     return NextResponse.json({
@@ -329,14 +339,4 @@ async function nextNumber(adminDb, counterKey) {
     tx.set(ref, { value: next, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return next;
   });
-}
-
-function labelForColorKey(key) {
-  if (!key) return "";
-  if (key.startsWith("cmyk:")) {
-    const ch = key.slice(5);
-    return { C: "Cyan", M: "Magenta", Y: "Yellow", K: "Black" }[ch] || ch;
-  }
-  if (key.startsWith("spot:")) return key.slice(5);
-  return key;
 }
