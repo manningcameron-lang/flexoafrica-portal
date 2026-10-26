@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
 import { COL_SUBMISSIONS } from "@/lib/amber-server";
 import { NOT_SURE_ALLOWED, OPTIONAL_FIELDS, REQUIRED_FIELDS, LABEL_ONLY_REQUIRED_FIELDS } from "@/lib/amber-spec.mjs";
+import { NEW_SUBMISSION_KIND } from "@/lib/amber-pricing.mjs";
 
 /**
  * The customer's AMBER job sheets.
@@ -113,8 +114,9 @@ export async function POST(request) {
     return NextResponse.json({ error: caller.error }, { status: caller.status });
   }
   const { db, uid, user } = caller;
-  const body = await request.json().catch(() => ({}));
-  const kind = body?.kind === "plates" ? "plates" : "repro";
+  // AMBER is artwork only. Whatever the browser asks for, a new job sheet is
+  // a repro job, so nobody can get plates made here without paying for them.
+  const kind = NEW_SUBMISSION_KIND;
 
   const ref = db.collection(COL_SUBMISSIONS).doc();
   await ref.set({
@@ -158,8 +160,8 @@ export async function PATCH(request) {
     );
   }
 
+  // `kind` is deliberately NOT editable. A sheet is what it was created as.
   const patch = { updatedAt: new Date() };
-  if ("kind" in body) patch.kind = body.kind === "plates" ? "plates" : "repro";
   if ("spec" in body) patch.spec = cleanSpec(body.spec);
   if ("notSure" in body) {
     patch.notSure = (Array.isArray(body.notSure) ? body.notSure : []).filter((k) =>

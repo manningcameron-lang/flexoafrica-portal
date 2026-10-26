@@ -51,7 +51,7 @@ export default function DashboardPage() {
           <Link href="/jobs" className="btn-secondary">
             My Jobs
           </Link>
-          <Link href="/order/new" className="btn-primary">
+          <Link href="/order" className="btn-primary">
             Place new order
           </Link>
         </div>
@@ -194,7 +194,7 @@ function EmptyState() {
         plate, from artwork through to delivery.
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
-        <Link href="/order/new" className="btn-primary">
+        <Link href="/order" className="btn-primary">
           Place your first order
         </Link>
         <Link href="/configurator" className="btn-secondary">

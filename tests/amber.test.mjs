@@ -8,6 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { dueAt, formatDue, isPublicHoliday, isWorkingDay } from "../lib/amber-due.mjs";
 import {
@@ -599,4 +600,50 @@ test("MIS answer: a refusal with no reason does not become an empty 'still neede
   const got = readMisAnswer(200, { ok: false, missing: [] });
   assert.equal(got.outcome, "try_again");
   assert.notEqual(got.outcome, "ask_for_missing");
+});
+
+// ─── AMBER DOES ARTWORK ONLY ───────────────────────────────────────────────
+// The page used to offer "Plates from my ready file" next to the R499 artwork
+// job. It showed no price and took no payment, so a customer who is not on
+// account could get plates made for nothing, while the same customer going
+// through Order Plates had to pay by card before we started. Plates now go
+// through Order Plates. Cam 2026-10-26.
+
+const SUBMISSION_ROUTE = readFileSync("app/api/amber/submission/route.js", "utf8");
+const SUBMIT_ROUTE = readFileSync("app/api/amber/submit/route.js", "utf8");
+const AMBER_PAGE = readFileSync("app/amber/page.jsx", "utf8");
+
+test("plates: a new AMBER job sheet is always an artwork job", async () => {
+  const { NEW_SUBMISSION_KIND, CHOICE_REPRO } = await import("../lib/amber-pricing.mjs");
+  assert.equal(NEW_SUBMISSION_KIND, CHOICE_REPRO);
+  assert.equal(NEW_SUBMISSION_KIND, "repro");
+});
+
+test("plates: the server never takes the kind from the browser", () => {
+  assert.ok(SUBMISSION_ROUTE.includes("const kind = NEW_SUBMISSION_KIND;"));
+  assert.ok(!SUBMISSION_ROUTE.includes('body?.kind === "plates"'));
+});
+
+test("plates: the kind of an existing sheet can never be switched", () => {
+  // Everything from PATCH onwards must not write a kind, in any shape.
+  const patchBlock = SUBMISSION_ROUTE.slice(
+    SUBMISSION_ROUTE.indexOf("export async function PATCH"),
+  );
+  assert.ok(patchBlock.length > 0);
+  assert.ok(!patchBlock.includes("patch.kind"));
+  assert.ok(!/kind\s*:/.test(patchBlock));
+});
+
+test("plates: Submit sends a plates sheet to Order Plates instead of making it", () => {
+  assert.ok(SUBMIT_ROUTE.includes('submission.kind !== "repro"'));
+  assert.ok(SUBMIT_ROUTE.includes("Order Plates"));
+});
+
+test("plates: the page no longer offers plates as a choice", () => {
+  assert.ok(!AMBER_PAGE.includes("Plates from my ready file"));
+  assert.ok(!AMBER_PAGE.includes("onKind"));
+});
+
+test("plates: the page points a ready file at Order Plates", () => {
+  assert.ok(AMBER_PAGE.includes('href="/order/new"'));
 });

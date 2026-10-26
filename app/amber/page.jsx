@@ -27,10 +27,12 @@ import {
   notSureFields,
 } from "@/lib/amber-spec.mjs";
 import {
+  AMBER_REPRO_PRICE_EXCL_VAT,
   AMBER_REPRO_REVISIONS_INCLUDED,
   CHOICE_PLATES,
   CHOICE_REPRO,
   EXTRA_REVISIONS_NOTE,
+  NEW_SUBMISSION_KIND,
   priceReproJob,
 } from "@/lib/amber-pricing.mjs";
 
@@ -136,7 +138,9 @@ function AmberPageInner() {
 
   const ensureSubmission = useCallback(async () => {
     if (submissionId) return submissionId;
-    const id = await createSubmission(user, kind);
+    // Always an artwork job. Plates go through Order Plates, which takes the
+    // payment. The server enforces this too.
+    const id = await createSubmission(user, NEW_SUBMISSION_KIND);
     setSubmissionId(id);
     await refresh();
     return id;
@@ -186,11 +190,6 @@ function AmberPageInner() {
     if (on) update({ [key]: "" });
   }
 
-  async function onKind(next) {
-    setKind(next);
-    if (submissionId) await saveSubmission(user, { id: submissionId, kind: next });
-  }
-
   async function onSameAsLastTime() {
     const last = lastSpecForPrinter(mine.filter((s) => s.id !== submissionId), spec.printer);
     if (!last) {
@@ -221,7 +220,9 @@ function AmberPageInner() {
     setBusy(true);
     try {
       const id = await ensureSubmission();
-      await saveSubmission(user, { id, kind, spec, notSure, files });
+      // `kind` is not sent: a sheet is what it was created as, and the
+      // server ignores any attempt to change it.
+      await saveSubmission(user, { id, spec, notSure, files });
       const token = await user.getIdToken();
       const res = await fetch("/api/amber/submit", {
         method: "POST",
@@ -279,30 +280,27 @@ function AmberPageInner() {
         plate-ready file and a PDF proof to sign off.
       </p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <ChoiceCard
-          active={kind === CHOICE_REPRO}
-          onClick={() => onKind(CHOICE_REPRO)}
-          title="Artwork by AMBER"
-          price={price?.free ? "First job free" : "R499 a job, excl VAT"}
-          lines={[
-            `${AMBER_REPRO_REVISIONS_INCLUDED} rounds of changes included`,
-            "Back within 24 hours, working days",
-            "You get a plate-ready file and a PDF proof",
-          ]}
-        />
-        <ChoiceCard
-          active={kind === CHOICE_PLATES}
-          onClick={() => onKind(CHOICE_PLATES)}
-          title="Plates from my ready file"
-          price="Your normal plate price"
-          lines={[
-            "Your file is already plate-ready",
-            "Priced at your account rate",
-            "This is not the R499 repro service",
-          ]}
-        />
+      <div className="mt-8 border border-accent-500 rounded-lg p-5">
+        <div className="font-semibold text-ink">Artwork by AMBER</div>
+        <div className="mt-1 text-accent-600 font-semibold">
+          {price?.free
+            ? "First job free"
+            : `R${AMBER_REPRO_PRICE_EXCL_VAT} a job, excl VAT`}
+        </div>
+        <ul className="mt-3 space-y-1 text-sm text-ink-muted">
+          <li>{AMBER_REPRO_REVISIONS_INCLUDED} rounds of changes included</li>
+          <li>Back within 24 hours, working days</li>
+          <li>You get a plate-ready file and a PDF proof</li>
+        </ul>
       </div>
+
+      <p className="mt-4 text-sm text-ink-muted">
+        Already have a plate-ready file and just want the plates?{" "}
+        <a href="/order/new" className="font-semibold text-accent-600 hover:underline">
+          Order plates instead
+        </a>
+        , where your price and payment are worked out for you.
+      </p>
 
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-ink">Your files</h2>
@@ -341,6 +339,11 @@ function AmberPageInner() {
           disabled={busy}
           className="mt-3 block text-sm"
         />
+        <p className="mt-1 text-sm text-ink">
+          Easiest is <strong>one zip folder</strong> holding the artwork and
+          everything it needs: linked images, logos and fonts. A single PDF is
+          fine too.
+        </p>
         <p className="mt-1 text-xs text-ink-muted">
           PDF, AI, EPS, PSD, TIFF, ZIP and fonts. Up to 300 MB a file, 1 GB a job.
         </p>
@@ -450,9 +453,12 @@ function AmberPageInner() {
         {kind === CHOICE_REPRO && price && (
           <p className="text-lg font-semibold text-ink">{price.customerText}</p>
         )}
+        {/* An older sheet from before 26 Oct 2026 can still say "plates".
+            Submit sends it to Order Plates rather than making a job. */}
         {kind === CHOICE_PLATES && (
           <p className="text-lg font-semibold text-ink">
-            Priced at your normal plate rate once we have measured the file.
+            This one was started as a plates job. Please order it on the Order
+            Plates page instead, where your price and payment are worked out.
           </p>
         )}
         <p className="mt-1 text-sm text-ink-muted">{EXTRA_REVISIONS_NOTE}.</p>
@@ -497,25 +503,6 @@ function AmberPageInner() {
         </section>
       )}
     </Shell>
-  );
-}
-
-function ChoiceCard({ active, onClick, title, price, lines }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        "text-left border rounded-lg p-5 transition-colors " +
-        (active ? "border-accent-500 bg-brand-50" : "border-ink/15 hover:border-ink/30")
-      }
-    >
-      <div className="font-semibold text-ink">{title}</div>
-      <div className="mt-1 text-accent-600 font-semibold">{price}</div>
-      <ul className="mt-3 space-y-1 text-sm text-ink-muted">
-        {lines.map((l) => <li key={l}>{l}</li>)}
-      </ul>
-    </button>
   );
 }
 

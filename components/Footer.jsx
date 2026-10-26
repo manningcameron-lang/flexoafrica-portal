@@ -52,7 +52,7 @@ export default function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/order/new" className="text-white/80 hover:text-white">
+                  <Link href="/order" className="text-white/80 hover:text-white">
                     Place Order
                   </Link>
                 </li>

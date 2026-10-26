@@ -41,7 +41,7 @@ function StatusScreen({ phase, error, fileName }) {
           </div>
           <div className="text-sm text-[#93a3b4]">{error}</div>
           <a
-            href="/order/new"
+            href="/order"
             className="inline-block mt-5 rounded-md bg-[#e11d2a] text-white text-sm font-semibold px-4 py-2"
           >
             Back to your order
