@@ -49,7 +49,7 @@ export async function GET(request) {
     const prior = await db
       .collection(COL_SUBMISSIONS)
       .where("company", "==", company)
-      .where("choice", "==", "repro")
+      .where("kind", "==", "repro")
       .limit(50)
       .get();
     const companyHasHadFreeJob = prior.docs.some((d) => !!d.data()?.jobNumber);

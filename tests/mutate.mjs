@@ -92,8 +92,8 @@ const MUTATIONS = [
   {
     label: '"Not sure" is treated as a missing answer and refuses the job',
     file: "lib/amber-spec.mjs",
-    find: "    if (isNotSure(value)) continue;\n    if (isBlank(value)) out.push(field.label);",
-    replace: "    if (isBlank(value)) out.push(field.label);",
+    find: "    if (unsure.includes(field.key)) continue;",
+    replace: "    // not-sure guard removed by mutation",
   },
   {
     label: "a job with no artwork is allowed through",
@@ -111,8 +111,44 @@ const MUTATIONS = [
   {
     label: '"Not sure" answers are no longer noticed, so the clock starts anyway',
     file: "lib/amber-spec.mjs",
-    find: "    if (isNotSure(value)) out.push(field.label);",
-    replace: "    if (false) out.push(field.label);",
+    find: "  const raw = Array.isArray(submission?.notSure) ? submission.notSure : [];",
+    replace: "  const raw = [];",
+  },
+  {
+    label: "a customer can shrug at ANY box, including the job name",
+    file: "lib/amber-spec.mjs",
+    find: "  return raw.filter((k) => NOT_SURE_ALLOWED.includes(k));",
+    replace: "  return raw;",
+  },
+  {
+    label: "gear and teeth are no longer asked for on a Label",
+    file: "lib/amber-spec.mjs",
+    find: "  return spec.bagType === \"Label\"",
+    replace: "  return false",
+  },
+  {
+    label: "155 thou drops off the plate list again",
+    file: "lib/amber-spec.mjs",
+    find: '  "45 thou", "67 thou", "100 thou", "112 thou", "125 thou", "155 thou",',
+    replace: '  "45 thou", "67 thou", "100 thou", "112 thou", "125 thou",',
+  },
+  {
+    label: "a job the MIS is still waiting on us for is treated as finished",
+    file: "lib/amber-submit-rules.mjs",
+    find: "      outcome: waitingOn.length > 0 ? \"made_waiting_on_us\" : \"made\",",
+    replace: '      outcome: "made",',
+  },
+  {
+    label: "a malformed yes from the MIS is believed",
+    file: "lib/amber-submit-rules.mjs",
+    find: "  if (body.ok === true && body.jobNumber) {",
+    replace: "  if (body.ok === true) {",
+  },
+  {
+    label: "a refusal from the MIS is read as success",
+    file: "lib/amber-submit-rules.mjs",
+    find: "  if (body.ok === false) {",
+    replace: "  if (false) {",
   },
 
   // ─── price ────────────────────────────────────────────────────────────────

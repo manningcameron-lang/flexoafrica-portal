@@ -128,18 +128,19 @@ export async function POST(request) {
       }
       await ref.set({
         uid: account.uid,
+        kind: "repro",
         company: account.company,
         customerEmail: account.email,
         source: "email",
-        choice: "repro",
         // The email's words are kept only so the customer can see what they
         // sent. They are never read as instructions.
         emailSubject: String(event.subject || "").slice(0, 300),
         spec: {},
+        notSure: [],
         files: stored,
-        status: "waiting_details",
         jobNumber: null,
         createdAt: new Date(),
+        createdAtMs: Date.now(),
         updatedAt: new Date(),
       });
     } else if (verdict.action === "hold_for_sender") {
@@ -176,7 +177,7 @@ export async function POST(request) {
       tooBig: verdict.tooBig,
     });
     const missing = submissionId
-      ? missingSpecFields({ files: stored, spec: {} })
+      ? missingSpecFields({ files: stored, spec: {}, notSure: [] })
       : [];
     const reply = await sendAmberReply({
       to: from,

@@ -7,16 +7,16 @@ import {
   ACCEPTED_EXTENSIONS,
   createSubmission,
   lastSpecForPrinter,
+  listSubmissions,
   removeSubmissionFile,
-  saveSpec,
-  setChoice as persistChoice,
+  saveSubmission,
   uploadSubmissionFile,
-  watchMySubmissions,
-  watchSubmission,
 } from "@/lib/amber-client";
 import {
+  GEAR_PITCH_OPTIONS,
   MATERIAL_OPTIONS,
-  NOT_SURE,
+  NOT_SURE_ALLOWED,
+  NOT_SURE_LABELS,
   PLATE_DISTORTION_OPTIONS,
   PLATE_THICKNESS_OPTIONS,
   PRINT_DIRECTION_OPTIONS,
@@ -43,9 +43,7 @@ export default function AmberPage() {
 }
 
 function Shell({ children }) {
-  return (
-    <div className="max-w-page mx-auto px-4 sm:px-6 py-10">{children}</div>
-  );
+  return <div className="max-w-page mx-auto px-4 sm:px-6 py-10">{children}</div>;
 }
 
 function AmberPageInner() {
@@ -54,15 +52,22 @@ function AmberPageInner() {
   const idFromLink = params.get("id");
 
   const [submissionId, setSubmissionId] = useState(idFromLink || null);
-  const [submission, setSubmission] = useState(null);
   const [mine, setMine] = useState([]);
   const [terms, setTerms] = useState(null);
   const [spec, setSpecState] = useState({});
+  const [notSure, setNotSure] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [kind, setKind] = useState(CHOICE_REPRO);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const fileInput = useRef(null);
+
+  const submission = useMemo(
+    () => mine.find((s) => s.id === submissionId) || null,
+    [mine, submissionId],
+  );
 
   // What this job will cost, and whether a PO number is compulsory.
   useEffect(() => {
@@ -83,55 +88,59 @@ function AmberPageInner() {
     return () => { cancelled = true; };
   }, [user]);
 
-  // Anything this customer already has on the go, including files that came
+  const refresh = useCallback(async () => {
+    if (!user) return [];
+    const items = await listSubmissions(user);
+    setMine(items);
+    return items;
+  }, [user]);
+
+  // Load what this customer already has on the go, including artwork that came
   // in by email before they ever opened this page.
   useEffect(() => {
-    if (!user?.uid) return;
-    return watchMySubmissions(user.uid, (items, err) => {
-      if (err) { setError(err.message); return; }
-      setMine(items || []);
-      if (!submissionId) {
-        const open = (items || []).find((s) => !s.jobNumber);
-        if (open) setSubmissionId(open.id);
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const items = await listSubmissions(user);
+        if (cancelled) return;
+        setMine(items);
+        const open = items.find((s) => (idFromLink ? s.id === idFromLink : !s.jobNumber));
+        if (open) {
+          setSubmissionId(open.id);
+          setSpecState(open.spec || {});
+          setNotSure(open.notSure || []);
+          setFiles(open.files || []);
+          setKind(open.kind || CHOICE_REPRO);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message);
       }
-    });
-  }, [user?.uid, submissionId]);
+    })();
+    return () => { cancelled = true; };
+  }, [user, idFromLink]);
 
-  useEffect(() => {
-    if (!submissionId) return;
-    return watchSubmission(submissionId, (item, err) => {
-      if (err) { setError(err.message); return; }
-      setSubmission(item);
-      if (item?.spec) setSpecState((prev) => (Object.keys(prev).length ? prev : item.spec));
-    });
-  }, [submissionId]);
-
-  const choice = submission?.choice || CHOICE_REPRO;
-  const files = submission?.files || [];
   const poRequired = !!terms?.poRequired;
-
+  const draft = useMemo(() => ({ spec, notSure, files }), [spec, notSure, files]);
   const missing = useMemo(
-    () => missingSpecFields({ files, spec }, { poRequired }),
-    [files, spec, poRequired],
+    () => missingSpecFields(draft, { poRequired }),
+    [draft, poRequired],
   );
-  const unsure = useMemo(() => notSureFields({ files, spec }), [files, spec]);
+  const unsure = useMemo(() => notSureFields(draft), [draft]);
+  const isLabel = spec.bagType === "Label";
 
   const price = useMemo(() => {
-    if (choice !== CHOICE_REPRO) return null;
+    if (kind !== CHOICE_REPRO) return null;
     return priceReproJob({ companyHasHadFreeJob: !!terms?.companyHasHadFreeJob });
-  }, [choice, terms]);
+  }, [kind, terms]);
 
   const ensureSubmission = useCallback(async () => {
     if (submissionId) return submissionId;
-    const id = await createSubmission({
-      uid: user.uid,
-      company: profile?.company,
-      email: profile?.email || user.email,
-      choice,
-    });
+    const id = await createSubmission(user, kind);
     setSubmissionId(id);
+    await refresh();
     return id;
-  }, [submissionId, user, profile, choice]);
+  }, [submissionId, user, kind, refresh]);
 
   async function onPickFiles(event) {
     const picked = Array.from(event.target.files || []);
@@ -143,7 +152,8 @@ function AmberPageInner() {
       let running = files;
       for (const file of picked) {
         setProgress({ name: file.name, percent: 0 });
-        const meta = await uploadSubmissionFile({
+        const { meta } = await uploadSubmissionFile({
+          user,
           uid: user.uid,
           submissionId: id,
           file,
@@ -151,7 +161,9 @@ function AmberPageInner() {
           onProgress: (percent) => setProgress({ name: file.name, percent }),
         });
         running = [...running, meta];
+        setFiles(running);
       }
+      await refresh();
     } catch (err) {
       setError(err.message || "That upload did not work. Please try again.");
     } finally {
@@ -165,20 +177,43 @@ function AmberPageInner() {
     setSpecState((prev) => ({ ...prev, ...patch }));
   }
 
-  async function onChoice(next) {
-    const id = await ensureSubmission();
-    await persistChoice(id, next);
+  function toggleNotSure(key, on) {
+    setNotSure((prev) => {
+      const next = prev.filter((k) => k !== key);
+      if (on && NOT_SURE_ALLOWED.includes(key)) next.push(key);
+      return next;
+    });
+    if (on) update({ [key]: "" });
+  }
+
+  async function onKind(next) {
+    setKind(next);
+    if (submissionId) await saveSubmission(user, { id: submissionId, kind: next });
   }
 
   async function onSameAsLastTime() {
-    if (!user?.uid) return;
-    const last = await lastSpecForPrinter(user.uid, spec.printer);
+    const last = lastSpecForPrinter(mine.filter((s) => s.id !== submissionId), spec.printer);
     if (!last) {
       setError("We could not find an earlier job to copy. Fill it in once and next time it will be here.");
       return;
     }
     setError(null);
-    setSpecState((prev) => ({ ...last, jobName: prev.jobName || "" }));
+    setSpecState((prev) => ({ ...last, description: prev.description || "" }));
+  }
+
+  async function onRemoveFile(path) {
+    setBusy(true);
+    try {
+      const after = await removeSubmissionFile({
+        user, submissionId, existingFiles: files, path,
+      });
+      setFiles(after.files || []);
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSubmit() {
@@ -186,7 +221,7 @@ function AmberPageInner() {
     setBusy(true);
     try {
       const id = await ensureSubmission();
-      await saveSpec(id, spec);
+      await saveSubmission(user, { id, kind, spec, notSure, files });
       const token = await user.getIdToken();
       const res = await fetch("/api/amber/submit", {
         method: "POST",
@@ -198,14 +233,12 @@ function AmberPageInner() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (data?.missing?.length) {
-          setError("Still needed: " + data.missing.join(", "));
-        } else {
-          setError(data?.error || "That did not go through. Please try again.");
-        }
+        if (data?.missing?.length) setError("Still needed: " + data.missing.join(", "));
+        else setError(data?.error || "That did not go through. Please try again.");
         return;
       }
       setResult(data);
+      await refresh();
     } catch (err) {
       setError(err.message || "That did not go through. Please try again.");
     } finally {
@@ -214,28 +247,26 @@ function AmberPageInner() {
   }
 
   if (result?.jobNumber) {
+    const waiting = (result.waitingOn || []).length > 0;
     return (
       <Shell>
-        <h1 className="text-2xl font-semibold text-ink">Thanks, AMBER is on it</h1>
+        <h1 className="text-2xl font-semibold text-ink">
+          {waiting ? "Thanks, we have it from here" : "Thanks, AMBER is on it"}
+        </h1>
         <p className="mt-3 text-ink">
-          Your job is <strong>{result.jobNumber}</strong>. You will have your
-          plate-ready file and PDF proof by <strong>{result.dueText}</strong>.
+          Your job is <strong>{result.jobNumber}</strong>.
+          {waiting
+            ? " You told us you were not sure about a few press details, so we will work those out for you. The 24 hours starts once they are in."
+            : result.dueSaid
+              ? <> You will have your plate-ready file and PDF proof by <strong>{result.dueSaid}</strong>.</>
+              : " You will have your plate-ready file and PDF proof shortly."}
         </p>
+        {result.firstFree && (
+          <p className="mt-2 text-ink">This one is on us: your first AMBER job is free.</p>
+        )}
         <a href="/jobs" className="inline-block mt-6 px-4 py-2 bg-accent-500 text-white rounded-md font-semibold">
           Track it in My Jobs
         </a>
-      </Shell>
-    );
-  }
-
-  if (result?.waitingOnFlexo) {
-    return (
-      <Shell>
-        <h1 className="text-2xl font-semibold text-ink">Thanks, we have it from here</h1>
-        <p className="mt-3 text-ink">
-          You told us you were not sure about {result.notSure.join(", ")}. We will
-          work that out and open the job for you. The 24 hours starts once it is in.
-        </p>
       </Shell>
     );
   }
@@ -248,11 +279,10 @@ function AmberPageInner() {
         plate-ready file and a PDF proof to sign off.
       </p>
 
-      {/* ── What they want ─────────────────────────────────────────────── */}
       <div className="mt-8 grid gap-4 sm:grid-cols-2">
         <ChoiceCard
-          active={choice === CHOICE_REPRO}
-          onClick={() => onChoice(CHOICE_REPRO)}
+          active={kind === CHOICE_REPRO}
+          onClick={() => onKind(CHOICE_REPRO)}
           title="Artwork by AMBER"
           price={price?.free ? "First job free" : "R499 a job, excl VAT"}
           lines={[
@@ -262,8 +292,8 @@ function AmberPageInner() {
           ]}
         />
         <ChoiceCard
-          active={choice === CHOICE_PLATES}
-          onClick={() => onChoice(CHOICE_PLATES)}
+          active={kind === CHOICE_PLATES}
+          onClick={() => onKind(CHOICE_PLATES)}
           title="Plates from my ready file"
           price="Your normal plate price"
           lines={[
@@ -274,7 +304,6 @@ function AmberPageInner() {
         />
       </div>
 
-      {/* ── Files ──────────────────────────────────────────────────────── */}
       <section className="mt-10">
         <h2 className="text-lg font-semibold text-ink">Your files</h2>
         {submission?.source === "email" && files.length > 0 && (
@@ -289,15 +318,14 @@ function AmberPageInner() {
           {files.map((f) => (
             <li key={f.path} className="px-4 py-3 flex items-center justify-between gap-4">
               <span className="text-sm text-ink truncate">
-                {f.fileName}
-                <span className="text-ink-muted"> · {formatSize(f.sizeBytes)}</span>
+                {f.name}
+                <span className="text-ink-muted"> · {formatSize(f.bytes)}</span>
               </span>
               <button
                 type="button"
+                disabled={busy}
                 className="text-sm text-ink-muted hover:text-ink"
-                onClick={() =>
-                  removeSubmissionFile({ submissionId, existingFiles: files, path: f.path })
-                }
+                onClick={() => onRemoveFile(f.path)}
               >
                 Remove
               </button>
@@ -323,7 +351,6 @@ function AmberPageInner() {
         )}
       </section>
 
-      {/* ── Press details ──────────────────────────────────────────────── */}
       <section className="mt-10">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold text-ink">Press details</h2>
@@ -342,7 +369,7 @@ function AmberPageInner() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Text label="Job name" hint="For example: Bordeaux Washed Potatoes 10kg"
-            value={spec.jobName} onChange={(v) => update({ jobName: v })} />
+            value={spec.description} onChange={(v) => update({ description: v })} />
           <Text label="Printer" value={spec.printer} onChange={(v) => update({ printer: v })} />
           <Text label="Press" value={spec.press} onChange={(v) => update({ press: v })} />
 
@@ -359,24 +386,30 @@ function AmberPageInner() {
           <Num label="Around" value={spec.around} onChange={(v) => update({ around: v })} />
 
           <Choose label="Plate thickness" value={spec.plateThickness} options={PLATE_THICKNESS_OPTIONS}
+            notSureKey="plateThickness" notSure={notSure} onNotSure={toggleNotSure}
             onChange={(v) => update({ plateThickness: v })} />
           <Choose label="Screen ruling" value={spec.screenRuling} options={SCREEN_RULING_OPTIONS}
+            notSureKey="screenRuling" notSure={notSure} onNotSure={toggleNotSure}
             onChange={(v) => update({ screenRuling: v })} />
 
-          <Text label="Cylinder or gear teeth" hint="For example: 93T"
-            value={spec.cylinder === NOT_SURE ? "" : spec.cylinder}
-            notSure={spec.cylinder === NOT_SURE}
-            onNotSure={(on) => update({ cylinder: on ? NOT_SURE : "" })}
-            onChange={(v) => update({ cylinder: v })} />
+          <Text label="Cylinder" hint="The cylinder this prints on"
+            value={spec.cylinder} onChange={(v) => update({ cylinder: v })}
+            notSureKey="cylinder" notSure={notSure} onNotSure={toggleNotSure} />
 
           <Choose label="Distortion" value={spec.plateDistortion} options={PLATE_DISTORTION_OPTIONS}
-            notSureLabel="Not sure, work it out with me"
+            notSureKey="plateDistortion" notSure={notSure} onNotSure={toggleNotSure}
             onChange={(v) => update({ plateDistortion: v })} />
           <Choose label="Print direction" value={spec.printDirection} options={PRINT_DIRECTION_OPTIONS}
             onChange={(v) => update({ printDirection: v })} />
 
-          {spec.bagType === "Label" && (
+          {/* Gear and teeth are a label thing. On a bag they mean nothing, so
+              they are only asked for, and only required, on a Label. */}
+          {isLabel && (
             <>
+              <ChooseValued label="Press gear" value={spec.gearPitch} options={GEAR_PITCH_OPTIONS}
+                notSureKey="gearPitch" notSure={notSure} onNotSure={toggleNotSure}
+                onChange={(v) => update({ gearPitch: v })} />
+              <Num label="Teeth" value={spec.cylinderTeeth} onChange={(v) => update({ cylinderTeeth: v })} />
               <Num label="Gap across" suffix="mm" value={spec.gapAcrossMm} onChange={(v) => update({ gapAcrossMm: v })} />
               <Num label="Gap around" suffix="mm" value={spec.gapAroundMm} onChange={(v) => update({ gapAroundMm: v })} />
             </>
@@ -386,6 +419,8 @@ function AmberPageInner() {
         <div className="mt-4">
           <Inks
             value={spec.colours}
+            unsure={notSure.includes("colours")}
+            onNotSure={(on) => toggleNotSure("colours", on)}
             onChange={(v) => update({ colours: v })}
           />
         </div>
@@ -394,7 +429,7 @@ function AmberPageInner() {
           <Text label="Barcode number" hint="Leave blank if there is none"
             value={spec.barcode} onChange={(v) => update({ barcode: v })} />
           <Text label="Required by" type="date"
-            value={spec.requiredByDate} onChange={(v) => update({ requiredByDate: v })} />
+            value={spec.requiredBy} onChange={(v) => update({ requiredBy: v })} />
           <Text label={`PO number${poRequired ? "" : " (optional)"}`}
             value={spec.poNumber} onChange={(v) => update({ poNumber: v })} />
         </div>
@@ -411,12 +446,11 @@ function AmberPageInner() {
         </div>
       </section>
 
-      {/* ── Price and Submit ───────────────────────────────────────────── */}
       <section className="mt-10 border-t border-ink/10 pt-6">
-        {choice === CHOICE_REPRO && price && (
+        {kind === CHOICE_REPRO && price && (
           <p className="text-lg font-semibold text-ink">{price.customerText}</p>
         )}
-        {choice === CHOICE_PLATES && (
+        {kind === CHOICE_PLATES && (
           <p className="text-lg font-semibold text-ink">
             Priced at your normal plate rate once we have measured the file.
           </p>
@@ -453,8 +487,10 @@ function AmberPageInner() {
           <ul className="mt-3 text-sm text-ink">
             {mine.filter((s) => s.jobNumber).map((s) => (
               <li key={s.id} className="py-1">
-                {s.jobNumber} · {s.spec?.jobName || "Job"}
-                {s.dueText ? ` · due back ${s.dueText}` : ""}
+                {s.jobNumber} · {s.spec?.description || "Job"}
+                {(s.misWaitingOn || []).length > 0
+                  ? " · waiting on us"
+                  : s.dueSaid ? ` · due back ${s.dueSaid}` : ""}
               </li>
             ))}
           </ul>
@@ -495,22 +531,29 @@ function Field({ label, hint, children }) {
 
 const inputCls = "mt-1 w-full border border-ink/15 rounded-md px-3 py-2 text-sm";
 
-function Text({ label, hint, value, onChange, type = "text", notSure, onNotSure }) {
+function NotSureBox({ notSureKey, notSure, onNotSure }) {
+  if (!notSureKey || !onNotSure) return null;
+  const on = (notSure || []).includes(notSureKey);
+  return (
+    <label className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
+      <input type="checkbox" checked={on} onChange={(e) => onNotSure(notSureKey, e.target.checked)} />
+      {NOT_SURE_LABELS[notSureKey] || "Not sure"}
+    </label>
+  );
+}
+
+function Text({ label, hint, value, onChange, type = "text", notSureKey, notSure, onNotSure }) {
+  const off = (notSure || []).includes(notSureKey);
   return (
     <Field label={label} hint={hint}>
       <input
         type={type}
         value={value || ""}
-        disabled={notSure}
+        disabled={off}
         onChange={(e) => onChange(e.target.value)}
-        className={inputCls + (notSure ? " opacity-50" : "")}
+        className={inputCls + (off ? " opacity-50" : "")}
       />
-      {onNotSure && (
-        <label className="mt-1 flex items-center gap-2 text-xs text-ink-muted">
-          <input type="checkbox" checked={!!notSure} onChange={(e) => onNotSure(e.target.checked)} />
-          Not sure, work it out with me
-        </label>
-      )}
+      <NotSureBox notSureKey={notSureKey} notSure={notSure} onNotSure={onNotSure} />
     </Field>
   );
 }
@@ -528,29 +571,53 @@ function Num({ label, suffix, value, onChange }) {
   );
 }
 
-function Choose({ label, value, options, onChange, notSureLabel }) {
+function Choose({ label, value, options, onChange, notSureKey, notSure, onNotSure }) {
+  const off = (notSure || []).includes(notSureKey);
   return (
     <Field label={label}>
-      <select value={value || ""} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+      <select
+        value={value || ""}
+        disabled={off}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputCls + (off ? " opacity-50" : "")}
+      >
         <option value="">Choose...</option>
         {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        {notSureLabel && <option value={NOT_SURE}>{notSureLabel}</option>}
       </select>
+      <NotSureBox notSureKey={notSureKey} notSure={notSure} onNotSure={onNotSure} />
+    </Field>
+  );
+}
+
+// Same as Choose, but the stored value and the words shown differ (the MIS
+// stores "CP" but shows the tooth pitch beside it).
+function ChooseValued({ label, value, options, onChange, notSureKey, notSure, onNotSure }) {
+  const off = (notSure || []).includes(notSureKey);
+  return (
+    <Field label={label}>
+      <select
+        value={value || ""}
+        disabled={off}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputCls + (off ? " opacity-50" : "")}
+      >
+        <option value="">Choose...</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <NotSureBox notSureKey={notSureKey} notSure={notSure} onNotSure={onNotSure} />
     </Field>
   );
 }
 
 // Inks, in the order they print. Ten slots, same as the MIS.
-function Inks({ value, onChange }) {
-  const unsure = Array.isArray(value) && value.length === 1 && value[0] === NOT_SURE;
-  const inks = unsure ? [] : (Array.isArray(value) ? value : []);
-
+function Inks({ value, unsure, onChange, onNotSure }) {
+  const inks = Array.isArray(value) ? value : [];
   function setInk(index, text) {
     const next = [...inks];
+    while (next.length <= index) next.push("");
     next[index] = text;
-    onChange(next.filter((v, i) => String(v || "").trim() || i < next.length - 1));
+    onChange(next);
   }
-
   return (
     <div>
       <label className="block text-sm font-medium text-ink">Inks, in print order</label>
@@ -568,12 +635,8 @@ function Inks({ value, onChange }) {
         ))}
       </div>
       <label className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
-        <input
-          type="checkbox"
-          checked={unsure}
-          onChange={(e) => onChange(e.target.checked ? [NOT_SURE] : [])}
-        />
-        Not sure, AMBER suggests
+        <input type="checkbox" checked={!!unsure} onChange={(e) => onNotSure(e.target.checked)} />
+        {NOT_SURE_LABELS.colours}
       </label>
     </div>
   );

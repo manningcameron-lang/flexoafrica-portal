@@ -18,10 +18,13 @@ import {
 } from "../lib/amber-loop-guard.mjs";
 import { expectedSignature, verifyWebhook } from "../lib/amber-signature.mjs";
 import {
-  NOT_SURE,
+  GEAR_PITCH_OPTIONS,
+  PLATE_THICKNESS_OPTIONS,
   isComplete,
   missingSpecFields,
   notSureFields,
+  notSureKeys,
+  requiredFieldsFor,
   submissionStatus,
 } from "../lib/amber-spec.mjs";
 import { priceReproJob, AMBER_REPRO_PRICE_EXCL_VAT } from "../lib/amber-pricing.mjs";
@@ -34,7 +37,7 @@ import {
   pickCustomerFromUserDocs,
   shouldCopyToSales,
 } from "../lib/amber-inbound-rules.mjs";
-import { jobCreationDecision, mayCustomerSubmit } from "../lib/amber-submit-rules.mjs";
+import { jobCreationDecision, mayCustomerSubmit, readMisAnswer } from "../lib/amber-submit-rules.mjs";
 import { buildEmail, emailKindForSender } from "../lib/amber-emails.mjs";
 
 // South African wall-clock time to a real instant (SAST is UTC+2 all year).
@@ -43,7 +46,7 @@ function sast(y, m, d, h, mi = 0) {
 }
 
 const FULL_SPEC = {
-  jobName: "Bordeaux Washed Potatoes 10kg",
+  description: "Bordeaux Washed Potatoes 10kg",
   printer: "Sack Force",
   press: "Soma",
   bagType: "SO Bag",
@@ -60,7 +63,7 @@ const FULL_SPEC = {
   printDirection: "Left to Right",
   colours: ["Black", "Cyan", "Magenta"],
 };
-const COMPLETE = { files: [{ path: "a.pdf" }], spec: { ...FULL_SPEC } };
+const COMPLETE = { files: [{ path: "a.pdf" }], notSure: [], spec: { ...FULL_SPEC } };
 
 // ─── 1. Matching the sender ─────────────────────────────────────────────────
 
@@ -170,7 +173,7 @@ test("missing list: a complete job is missing nothing", () => {
 });
 
 test("missing list: names every box that is still empty, in form order", () => {
-  const got = missingSpecFields({ files: [{ path: "a" }], spec: { jobName: "X" } });
+  const got = missingSpecFields({ files: [{ path: "a" }], notSure: [], spec: { description: "X" } });
   assert.equal(got.includes("Job name"), false);
   assert.equal(got[0], "Printer");
   assert.equal(got.includes("Inks, in print order"), true);
@@ -178,7 +181,7 @@ test("missing list: names every box that is still empty, in form order", () => {
 });
 
 test("missing list: no artwork is itself a missing item", () => {
-  const got = missingSpecFields({ files: [], spec: { ...FULL_SPEC } });
+  const got = missingSpecFields({ files: [], notSure: [], spec: { ...FULL_SPEC } });
   assert.deepEqual(got, ["Artwork file"]);
 });
 
@@ -189,39 +192,79 @@ test("missing list: a PO-approved customer must give a PO number", () => {
 
 test("missing list: a blank-looking answer does not count as filled in", () => {
   const spec = { ...FULL_SPEC, cylinder: "   ", colours: ["", "  "] };
-  const got = missingSpecFields({ files: [{ path: "a" }], spec });
+  const got = missingSpecFields({ files: [{ path: "a" }], notSure: [], spec });
   assert.deepEqual(got, ["Cylinder or gear teeth", "Inks, in print order"]);
 });
 
-// ─── 5. "Not sure" holds the job, it does not refuse it ─────────────────────
+// ─── The live MIS boxes, which an out-of-date copy got wrong ────────────────
 
-test("not sure: is an ANSWER, so it never appears on the missing list", () => {
-  const spec = { ...FULL_SPEC, plateDistortion: NOT_SURE };
-  assert.deepEqual(missingSpecFields({ files: [{ path: "a" }], spec }), []);
+test("the plate thickness list matches the live MIS, 155 thou included", () => {
+  // 155 thou was missing because the copy of the MIS it was read from was
+  // about eighteen changes out of date. Read off the live job screen since.
+  assert.equal(PLATE_THICKNESS_OPTIONS.includes("155 thou"), true);
+  assert.equal(PLATE_THICKNESS_OPTIONS.includes("Gold A"), true);
+  assert.equal(PLATE_THICKNESS_OPTIONS.length, 10);
 });
 
-test("not sure: parks the job with us instead of starting the clock", () => {
-  const spec = { ...FULL_SPEC, plateDistortion: NOT_SURE };
-  const sub = { files: [{ path: "a" }], spec };
+test("press gear is CP or DP, the two the live MIS offers", () => {
+  assert.deepEqual(GEAR_PITCH_OPTIONS.map((o) => o.value), ["CP", "DP"]);
+  assert.ok(GEAR_PITCH_OPTIONS[0].label.includes("3.175 mm"));
+});
+
+test("gear and teeth are asked for on a Label, and never on a bag", () => {
+  const bag = { files: [{ path: "a" }], notSure: [], spec: { ...FULL_SPEC, bagType: "SO Bag" } };
+  const label = { files: [{ path: "a" }], notSure: [], spec: { ...FULL_SPEC, bagType: "Label" } };
+  assert.deepEqual(missingSpecFields(bag), []);
+  assert.deepEqual(missingSpecFields(label), ["Press gear", "Teeth"]);
+  assert.equal(requiredFieldsFor(label).length, requiredFieldsFor(bag).length + 2);
+});
+
+test("a Label with gear and teeth filled in is complete", () => {
+  const label = {
+    files: [{ path: "a" }],
+    notSure: [],
+    spec: { ...FULL_SPEC, bagType: "Label", gearPitch: "CP", cylinderTeeth: 93 },
+  };
+  assert.deepEqual(missingSpecFields(label), []);
+});
+
+// ─── 5. "Not sure" holds the box, it does not refuse the job ────────────────
+
+test("not sure: is an ANSWER, so it never appears on the missing list", () => {
+  const sub = { files: [{ path: "a" }], notSure: ["plateDistortion"], spec: { ...FULL_SPEC, plateDistortion: "" } };
+  assert.deepEqual(missingSpecFields(sub), []);
+});
+
+test("not sure: parks that box with us instead of starting the clock", () => {
+  const sub = { files: [{ path: "a" }], notSure: ["plateDistortion"], spec: { ...FULL_SPEC, plateDistortion: "" } };
   assert.deepEqual(notSureFields(sub), ["Distortion"]);
   assert.equal(submissionStatus(sub), "waiting_flexo");
   assert.equal(isComplete(sub), false);
 });
 
 test("not sure: on the inks too", () => {
-  const spec = { ...FULL_SPEC, colours: [NOT_SURE] };
-  const sub = { files: [{ path: "a" }], spec };
+  const sub = { files: [{ path: "a" }], notSure: ["colours"], spec: { ...FULL_SPEC, colours: [] } };
   assert.deepEqual(missingSpecFields(sub), []);
   assert.deepEqual(notSureFields(sub), ["Inks, in print order"]);
 });
 
-test("not sure: Submit waits on us rather than making the job", () => {
-  const sub = { uid: "u1", files: [{ path: "a" }], spec: { ...FULL_SPEC, cylinder: NOT_SURE } };
-  assert.equal(jobCreationDecision(sub).action, "wait_on_flexo");
+test("not sure: a customer cannot shrug at the job name or the artwork", () => {
+  // Only the boxes on the allowed list may be answered "Not sure". Anything
+  // else in that list is ignored, so it cannot be used to skip a required box.
+  const sub = { files: [{ path: "a" }], notSure: ["description", "printer"], spec: { ...FULL_SPEC, description: "", printer: "" } };
+  assert.deepEqual(notSureKeys(sub), []);
+  assert.deepEqual(missingSpecFields(sub), ["Job name", "Printer"]);
+});
+
+test("not sure: Submit now hands it to the job system rather than parking it", () => {
+  // Changed 26 Oct 2026 to match the MIS: it makes the job anyway and tells
+  // us what it is waiting on, so the customer gets a job number straight away.
+  const sub = { uid: "u1", files: [{ path: "a" }], notSure: ["cylinder"], spec: { ...FULL_SPEC, cylinder: "" } };
+  assert.equal(jobCreationDecision(sub).action, "create");
 });
 
 test("status: missing details beats not sure in what the customer is shown", () => {
-  const sub = { files: [], spec: { ...FULL_SPEC, plateDistortion: NOT_SURE } };
+  const sub = { files: [], notSure: ["plateDistortion"], spec: { ...FULL_SPEC } };
   assert.equal(submissionStatus(sub), "waiting_details");
 });
 
@@ -464,4 +507,65 @@ test("sales copy: out of office, lists and bounces are NOT copied", () => {
   assert.equal(shouldCopyToSales({ from: "a@b.com", headers: { Precedence: "bulk" } }), false);
   assert.equal(shouldCopyToSales({ from: "mailer-daemon@b.com" }), false);
   assert.equal(shouldCopyToSales({ from: "" }), false);
+});
+
+// ─── Reading what the job system answered ───────────────────────────────────
+// The MIS answers in more ways than yes or no. Getting these wrong is how a
+// customer ends up with two jobs, or with a lost file nobody chases.
+
+test("MIS answer: a made job is read as made", () => {
+  const got = readMisAnswer(200, {
+    ok: true, jobNumber: "FA005341", dueAt: "2026-10-28T16:00:00+02:00",
+    dueSaid: "Tue 28 Oct, 16:00", firstFree: true, kind: "repro",
+  });
+  assert.equal(got.outcome, "made");
+  assert.equal(got.jobNumber, "FA005341");
+  assert.equal(got.dueSaid, "Tue 28 Oct, 16:00");
+  assert.equal(got.firstFree, true);
+});
+
+test("MIS answer: a job it is waiting on us for is NOT treated as finished", () => {
+  const got = readMisAnswer(200, {
+    ok: true, jobNumber: "FA005342", dueAt: null, waitingOn: ["plateDistortion"],
+  });
+  assert.equal(got.outcome, "made_waiting_on_us");
+  assert.equal(got.jobNumber, "FA005342");
+  assert.deepEqual(got.waitingOn, ["plateDistortion"]);
+  assert.equal(got.dueAt, null);
+});
+
+test("MIS answer: a refusal gives the customer the missing list", () => {
+  const got = readMisAnswer(200, { ok: false, missing: ["Printer"], why: "no printer" });
+  assert.equal(got.outcome, "ask_for_missing");
+  assert.deepEqual(got.missing, ["Printer"]);
+});
+
+test("MIS answer: asking twice is flagged, so no second job is made", () => {
+  const got = readMisAnswer(200, { ok: true, jobNumber: "FA005341", again: true });
+  assert.equal(got.again, true);
+  assert.equal(got.jobNumber, "FA005341");
+});
+
+test("MIS answer: a job made with leftover steps keeps its warnings", () => {
+  const got = readMisAnswer(200, {
+    ok: true, jobNumber: "FA005343", warnings: ["Dropbox folder not made yet"],
+  });
+  assert.equal(got.outcome, "made");
+  assert.deepEqual(got.warnings, ["Dropbox folder not made yet"]);
+});
+
+test("MIS answer: every error status is read as its own thing", () => {
+  assert.equal(readMisAnswer(401, null).outcome, "config_error");
+  assert.equal(readMisAnswer(403, { why: "suspended" }).outcome, "not_allowed");
+  assert.equal(readMisAnswer(403, { why: "suspended" }).message, "suspended");
+  assert.equal(readMisAnswer(404, null).outcome, "bad_request");
+  assert.equal(readMisAnswer(400, null).outcome, "bad_request");
+  assert.equal(readMisAnswer(500, null).outcome, "try_again");
+  assert.equal(readMisAnswer(200, null).outcome, "try_again");
+});
+
+test("MIS answer: a yes with no job number is not believed", () => {
+  // Without this, a malformed answer would look like success and the job
+  // sheet would be stamped with "undefined" as its job number.
+  assert.equal(readMisAnswer(200, { ok: true }).outcome, "try_again");
 });
