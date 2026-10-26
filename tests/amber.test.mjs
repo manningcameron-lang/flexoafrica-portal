@@ -569,3 +569,34 @@ test("MIS answer: a yes with no job number is not believed", () => {
   // sheet would be stamped with "undefined" as its job number.
   assert.equal(readMisAnswer(200, { ok: true }).outcome, "try_again");
 });
+
+test("MIS answer: a refusal on a 4xx still gives the customer the missing list", () => {
+  // The live door answers a refusal with a 4xx AND the list in the body
+  // (checked against it on 26 Oct 2026). Reading the status first would tell
+  // the customer "not found" instead of what is actually missing.
+  const got = readMisAnswer(400, { ok: false, missing: ["Printer", "Inks"], why: "incomplete" });
+  assert.equal(got.outcome, "ask_for_missing");
+  assert.deepEqual(got.missing, ["Printer", "Inks"]);
+  assert.equal(got.message, "incomplete");
+});
+
+test("MIS answer: an Unauthorized with an EMPTY list is not mistaken for a refusal", () => {
+  // The door answers 401 with {ok:false, missing:[]}. That is a setup problem
+  // on our side, not something the customer can fix, so it must not turn into
+  // an empty "still needed:" message.
+  const got = readMisAnswer(401, { ok: false, missing: [], why: "Unauthorized" });
+  assert.equal(got.outcome, "config_error");
+});
+
+test("MIS answer: a 403 and a 404 pass the door's own words through", () => {
+  assert.equal(readMisAnswer(403, { ok: false, missing: [], why: "account suspended" }).message, "account suspended");
+  assert.equal(readMisAnswer(404, { ok: false, missing: [], why: "no such sheet" }).message, "no such sheet");
+});
+
+test("MIS answer: a refusal with no reason does not become an empty 'still needed'", () => {
+  // If the door says no but names nothing, the customer cannot act on it, so
+  // they must not be shown a blank list. They get "try again" instead.
+  const got = readMisAnswer(200, { ok: false, missing: [] });
+  assert.equal(got.outcome, "try_again");
+  assert.notEqual(got.outcome, "ask_for_missing");
+});

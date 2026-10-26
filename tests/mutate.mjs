@@ -145,10 +145,16 @@ const MUTATIONS = [
     replace: "  if (body.ok === true) {",
   },
   {
-    label: "a refusal from the MIS is read as success",
+    label: "a refusal on a 4xx loses the missing list again",
     file: "lib/amber-submit-rules.mjs",
-    find: "  if (body.ok === false) {",
+    find: "  if (body?.ok === false) {",
     replace: "  if (false) {",
+  },
+  {
+    label: "an Unauthorized is mistaken for a customer-fixable refusal",
+    file: "lib/amber-submit-rules.mjs",
+    find: "    if (missing.length > 0) {",
+    replace: "    if (missing.length >= 0) {",
   },
 
   // ─── price ────────────────────────────────────────────────────────────────
