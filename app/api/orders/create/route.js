@@ -217,6 +217,8 @@ export async function POST(request) {
           ? li.printSide.charAt(0).toUpperCase() + li.printSide.slice(1)
           : "",
         inkType: li.inkType || "",
+        // The PRINT size, what runs on press. Deliberately NOT the plate
+        // size: the plates list below carries the bigger trimmed plate.
         widthMm: String(Number(li.widthCm) * 10),
         pitchMm: String(Number(li.heightCm) * 10),
         across: "",

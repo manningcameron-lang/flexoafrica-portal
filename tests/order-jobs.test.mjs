@@ -13,6 +13,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  TRIM_CM,
+  billedPlateDimensions,
+  billedPlateMm,
+  inkAreaForColour,
+} from "../lib/plate-size.mjs";
+import {
   MAX_COLOURS_ON_A_JOB_SHEET,
   coloursForLineItem,
   descriptionForLineItem,
@@ -121,8 +127,9 @@ test("one plate row per ticked colour, sized in millimetres", () => {
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map((r) => r.colour), ["Cyan", "Black"]);
   for (const row of rows) {
-    assert.equal(row.width, 200);
-    assert.equal(row.length, 300);
+    // 20 x 30 cm print, plus 4 cm trim each way, in mm.
+    assert.equal(row.width, 240);
+    assert.equal(row.length, 340);
     assert.equal(row.active, true);
   }
 });
@@ -131,7 +138,7 @@ test("a line with nothing ticked still gets one blank plate row", () => {
   const rows = plateRowsForLineItem(line({}));
   assert.equal(rows.length, 1);
   assert.equal(rows[0].colour, "");
-  assert.equal(rows[0].width, 200);
+  assert.equal(rows[0].width, 240);
 });
 
 test("a missing or silly size becomes zero rather than NaN", () => {
@@ -142,8 +149,8 @@ test("a missing or silly size becomes zero rather than NaN", () => {
 
 test("centimetres really are turned into millimetres", () => {
   const rows = plateRowsForLineItem(line({ "cmyk:K": true }, { widthCm: 12.5, heightCm: 7 }));
-  assert.equal(rows[0].width, 125);
-  assert.equal(rows[0].length, 70);
+  assert.equal(rows[0].width, 165);
+  assert.equal(rows[0].length, 110);
 });
 
 // ─── what the job is called ───────────────────────────────────────────────
@@ -224,4 +231,93 @@ test("a plate line takes exactly ONE FA job number", () => {
 
 test("the route builds its jobs from the one-job-per-line rule", () => {
   assert.ok(ROUTE.includes("plannedJobs = jobsForOrder("));
+});
+
+// ─── THE SECOND REGRESSION: the job sheet must say the plate we BILL ───────
+// The price was worked out from the ink area plus 4 cm of trim; the job sheet
+// recorded the raw page size with no trim. So a 20 x 30 cm job was charged as
+// 816 cm2 and written down as 600 cm2, a quarter small, every time.
+
+test("the trim is 4 cm and it is added to both the width and the length", () => {
+  assert.equal(TRIM_CM, 4);
+  const billed = billedPlateDimensions(20, 30);
+  assert.equal(billed.billedWidthCm, 24);
+  assert.equal(billed.billedHeightCm, 34);
+  assert.equal(billed.areaCm2, 816);
+});
+
+test("no size at all stays zero, so nothing is billed for 4 x 4 of nothing", () => {
+  const billed = billedPlateDimensions(0, 0);
+  assert.equal(billed.billedWidthCm, 0);
+  assert.equal(billed.billedHeightCm, 0);
+  assert.equal(billed.areaCm2, 0);
+});
+
+test("the job sheet records the trimmed plate, not the print size", () => {
+  const rows = plateRowsForLineItem(line(CMYK));
+  for (const row of rows) {
+    assert.equal(row.width, 240);
+    assert.equal(row.length, 340);
+    assert.notEqual(row.width, 200);
+  }
+});
+
+test("each colour gets its OWN measured size plus the trim", () => {
+  const measured = line(CMYK, {
+    pdfAnalysis: {
+      separations: [
+        { key: "cmyk:C", bboxWidthCm: 18, bboxHeightCm: 28 },
+        { key: "cmyk:M", bboxWidthCm: 19, bboxHeightCm: 29 },
+        { key: "cmyk:Y", bboxWidthCm: 12, bboxHeightCm: 10 },
+        { key: "cmyk:K", bboxWidthCm: 20, bboxHeightCm: 30 },
+      ],
+    },
+  });
+  const rows = plateRowsForLineItem(measured);
+  assert.deepEqual(
+    rows.map((r) => `${r.colour} ${r.width}x${r.length}`),
+    ["Cyan 220x320", "Magenta 230x330", "Yellow 160x140", "Black 240x340"],
+  );
+});
+
+test("a colour the file checker never measured falls back to the whole page", () => {
+  const measured = line({ "cmyk:C": true, "spot:Opaque White": true }, {
+    pdfAnalysis: { separations: [{ key: "cmyk:C", bboxWidthCm: 18, bboxHeightCm: 28 }] },
+  });
+  const rows = plateRowsForLineItem(measured);
+  assert.equal(rows[0].width, 220);
+  assert.equal(rows[1].width, 240);
+});
+
+test("a measured size of zero is not trusted, the page is used instead", () => {
+  const ink = inkAreaForColour(
+    line({ "cmyk:C": true }, {
+      pdfAnalysis: { separations: [{ key: "cmyk:C", bboxWidthCm: 0, bboxHeightCm: 28 }] },
+    }),
+    "cmyk:C",
+  );
+  assert.equal(ink.bboxWidthCm, 20);
+  assert.equal(ink.bboxHeightCm, 30);
+});
+
+test("the plate size in mm is the ink area plus the trim, times ten", () => {
+  const plate = billedPlateMm(line({ "cmyk:K": true }), "cmyk:K");
+  assert.equal(plate.widthMm, 240);
+  assert.equal(plate.lengthMm, 340);
+  assert.equal(plate.areaCm2, 816);
+});
+
+// ─── one source of truth for the plate size ───────────────────────────────
+// The whole fault was two places working out a plate size differently. The
+// price must read its sizes from the SAME file the job sheet reads.
+
+const PRICING = readFileSync("lib/pricing.js", "utf8");
+
+test("the price reads its plate sizes from the same file the job sheet does", () => {
+  assert.ok(PRICING.includes('from "./plate-size.mjs"'));
+});
+
+test("the price does not keep its own copy of the plate size rule", () => {
+  assert.ok(!PRICING.includes("export function billedPlateDimensions"));
+  assert.ok(!PRICING.includes("+ TRIM_CM"));
 });

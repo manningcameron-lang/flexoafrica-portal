@@ -68,6 +68,20 @@ export async function POST(request) {
       );
     }
 
+    // AMBER is artwork only. An older sheet that still says "plates" is sent
+    // to Order Plates instead of being made here, because nothing on this page
+    // takes a payment and Order Plates does.
+    if (submission?.kind && submission.kind !== "repro") {
+      return NextResponse.json(
+        {
+          error:
+            "Plates are ordered on the Order Plates page, where your price " +
+            "and payment are worked out. Open Order Plates and send the file there.",
+        },
+        { status: 400 },
+      );
+    }
+
     // PO-approved companies must give a PO number, same as Order Plates.
     const settingsSnap = await db.collection("settings").doc("customers").get();
     const list = settingsSnap.exists ? settingsSnap.data()?.list || [] : [];

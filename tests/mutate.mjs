@@ -236,8 +236,8 @@ const MUTATIONS = [
   {
     label: "only the first colour on a line gets a plate",
     file: "lib/order-jobs.mjs",
-    find: "  return keys.map((key) => ({",
-    replace: "  return keys.slice(0, 1).map((key) => ({",
+    find: "  return keys.map((key) => {",
+    replace: "  return keys.slice(0, 1).map((key) => {",
   },
   {
     label: "colours are no longer listed in printing order",
@@ -258,21 +258,15 @@ const MUTATIONS = [
     replace: "  if (colours.length > 0) {",
   },
   {
-    label: "centimetres are no longer turned into millimetres",
-    file: "lib/order-jobs.mjs",
-    find: "  return Number.isFinite(n) && n > 0 ? n * 10 : 0;",
-    replace: "  return Number.isFinite(n) && n > 0 ? n : 0;",
-  },
-  {
-    label: "a missing or negative plate size is let through as rubbish",
-    file: "lib/order-jobs.mjs",
-    find: "  return Number.isFinite(n) && n > 0 ? n * 10 : 0;",
-    replace: "  return Number(value) * 10;",
+    label: "a job with no size entered is billed as a 4 x 4 cm plate",
+    file: "lib/plate-size.mjs",
+    find: "  const billedWidthCm = w > 0 ? w + TRIM_CM : 0;",
+    replace: "  const billedWidthCm = w + TRIM_CM;",
   },
   {
     label: "a line with no colours ticked gets no plate row at all",
     file: "lib/order-jobs.mjs",
-    find: '    return [{ key: "", colour: "", width: widthMm, length: lengthMm, active: true }];',
+    find: '    return [\n      { key: "", colour: "", width: page.widthMm, length: page.lengthMm, active: true },\n    ];',
     replace: "    return [];",
   },
   {
@@ -302,8 +296,8 @@ const MUTATIONS = [
   {
     label: "plate rows arrive switched off",
     file: "lib/order-jobs.mjs",
-    find: "    active: true,\n  }));",
-    replace: "    active: false,\n  }));",
+    find: "      active: true,\n    };",
+    replace: "      active: false,\n    };",
   },
   {
     label: "the customer's own job name is ignored",
@@ -323,6 +317,88 @@ const MUTATIONS = [
     file: "app/api/orders/create/route.js",
     find: "    const plannedJobs = jobsForOrder(",
     replace: "    const plannedJobs = perColourJobs(",
+  },
+
+  // ─── the plate size on the job sheet must be the one we BILL ─────────────
+  {
+    label: "the plate trim drops to zero, so the job sheet is a quarter small again",
+    file: "lib/plate-size.mjs",
+    find: "export const TRIM_CM = 4;",
+    replace: "export const TRIM_CM = 0;",
+  },
+  {
+    label: "the trim stops being added to the plate width",
+    file: "lib/plate-size.mjs",
+    find: "  const billedWidthCm = w > 0 ? w + TRIM_CM : 0;",
+    replace: "  const billedWidthCm = w;",
+  },
+  {
+    label: "the trim stops being added to the plate length",
+    file: "lib/plate-size.mjs",
+    find: "  const billedHeightCm = h > 0 ? h + TRIM_CM : 0;",
+    replace: "  const billedHeightCm = h;",
+  },
+  {
+    label: "each colour's own measured size is ignored",
+    file: "lib/plate-size.mjs",
+    find: "  const measured = separations.find((s) => s?.key === colourKey);",
+    replace: "  const measured = null;",
+  },
+  {
+    label: "a measured size of zero is trusted",
+    file: "lib/plate-size.mjs",
+    find: "  if (measured && positive(measured.bboxWidthCm) > 0 && positive(measured.bboxHeightCm) > 0) {",
+    replace: "  if (measured) {",
+  },
+  {
+    label: "the plate size stops being turned into millimetres",
+    file: "lib/plate-size.mjs",
+    find: "    widthMm: round2(billed.billedWidthCm * 10),",
+    replace: "    widthMm: round2(billed.billedWidthCm),",
+  },
+  {
+    label: "the job sheet goes back to the untrimmed page size",
+    file: "lib/order-jobs.mjs",
+    find: "    const plate = billedPlateMm(lineItem, key);",
+    replace: "    const plate = { widthMm: Number(lineItem?.widthCm) * 10, lengthMm: Number(lineItem?.heightCm) * 10 };",
+  },
+  {
+    label: "the price stops sharing the plate size rule with the job sheet",
+    file: "lib/pricing.js",
+    find: 'import { TRIM_CM, billedPlateDimensions, inkAreaForColour } from "./plate-size.mjs";',
+    replace: "const TRIM_CM = 4;",
+  },
+
+  // ─── AMBER does artwork only ────────────────────────────────────────────
+  {
+    label: "a new AMBER job sheet can be a plates job again",
+    file: "lib/amber-pricing.mjs",
+    find: "export const NEW_SUBMISSION_KIND = CHOICE_REPRO;",
+    replace: "export const NEW_SUBMISSION_KIND = CHOICE_PLATES;",
+  },
+  {
+    label: "the server takes the job kind from the browser again",
+    file: "app/api/amber/submission/route.js",
+    find: "  const kind = NEW_SUBMISSION_KIND;",
+    replace: '  const kind = body?.kind === "plates" ? "plates" : "repro";',
+  },
+  {
+    label: "the kind of an existing job sheet can be switched again",
+    file: "app/api/amber/submission/route.js",
+    find: "  const patch = { updatedAt: new Date() };",
+    replace: "  const patch = { updatedAt: new Date(), kind: body.kind };",
+  },
+  {
+    label: "Submit makes a plates job instead of sending it to Order Plates",
+    file: "app/api/amber/submit/route.js",
+    find: '    if (submission?.kind && submission.kind !== "repro") {',
+    replace: "    if (false) {",
+  },
+  {
+    label: "the page offers plates as a choice again",
+    file: "app/amber/page.jsx",
+    find: "        <div className=\"font-semibold text-ink\">Artwork by AMBER</div>",
+    replace: "        <div className=\"font-semibold text-ink\">Plates from my ready file</div>",
   },
 ];
 
@@ -363,12 +439,17 @@ if (!suitePasses()) {
 console.log("Green.\n");
 
 let survivors = 0;
+// A mutation whose text no longer exists in the file tests NOTHING, and the
+// line saying so scrolls past in the middle of a long run. Counted here so it
+// lands in the summary at the bottom where it cannot be missed.
+let brokenSetups = 0;
 for (const m of MUTATIONS) {
   const original = readFileSync(m.file, "utf8");
   const before = hash(original);
 
   const count = original.split(m.find).length - 1;
   if (count !== 1) {
+    brokenSetups += 1;
     console.error(`SETUP ERROR  ${m.label}`);
     console.error(`  "${m.find.slice(0, 60)}..." appears ${count} times in ${m.file}, expected 1`);
     process.exitCode = 1;
@@ -397,6 +478,7 @@ for (const m of MUTATIONS) {
 
   if (!landed) {
     console.error(`SABOTAGE DID NOT LAND  ${m.label}`);
+    brokenSetups += 1;
     process.exitCode = 1;
   } else if (!red) {
     console.error(`SURVIVED (no test caught it)  ${m.label}  [${m.file}]`);
@@ -407,7 +489,16 @@ for (const m of MUTATIONS) {
   }
 }
 
-console.log(`\n${MUTATIONS.length} mutations, ${survivors} survived.`);
-if (survivors === 0 && !process.exitCode) {
+console.log(
+  `\n${MUTATIONS.length} mutations, ${survivors} survived, ` +
+    `${brokenSetups} could not be set up.`,
+);
+if (brokenSetups > 0) {
+  console.error(
+    `${brokenSetups} mutation(s) no longer match the code, so they tested nothing. ` +
+      "Point them at the real text and run again.",
+  );
+}
+if (survivors === 0 && brokenSetups === 0 && !process.exitCode) {
   console.log("Every deliberate break was caught, and every file was restored.");
 }
