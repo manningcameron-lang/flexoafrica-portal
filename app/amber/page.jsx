@@ -34,7 +34,7 @@ import {
   CHOICE_REPRO,
   EXTRA_REVISIONS_NOTE,
   NEW_SUBMISSION_KIND,
-  priceReproJob,
+  priceShownToCustomer,
 } from "@/lib/amber-pricing.mjs";
 
 export default function AmberPage() {
@@ -137,7 +137,8 @@ function AmberPageInner() {
 
   const price = useMemo(() => {
     if (kind !== CHOICE_REPRO) return null;
-    return priceReproJob({ companyHasHadFreeJob: !!terms?.companyHasHadFreeJob });
+    // "Free" only once the price check has confirmed it. Cam 2026-10-27.
+    return priceShownToCustomer(terms);
   }, [kind, terms]);
 
   const ensureSubmission = useCallback(async () => {
