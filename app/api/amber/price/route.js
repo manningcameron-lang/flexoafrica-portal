@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
 import { matchCustomer } from "@/lib/company-match";
 import { COL_SUBMISSIONS } from "@/lib/amber-server";
+import { FREE_JOB_CHECK_LIMIT, firstJobAnswer } from "@/lib/amber-pricing.mjs";
 
 /**
  * GET /api/amber/price
@@ -9,6 +10,9 @@ import { COL_SUBMISSIONS } from "@/lib/amber-server";
  * What the signed-in customer will pay, so the page can say it before they
  * press Submit:
  *   { poRequired, companyHasHadFreeJob, ratePerCm2 }
+ *
+ * companyHasHadFreeJob is true, false or null (cannot be sure). The page says
+ * "First job free" only when it is exactly false.
  *
  * This is a SERVER route for the same reason /api/account/terms is: the
  * figures live in settings/customers, which also holds every other
@@ -46,13 +50,22 @@ export async function GET(request) {
     const customer = matchCustomer(list, company);
 
     // "First" means this company has never had an AMBER repro job made.
-    const prior = await db
-      .collection(COL_SUBMISSIONS)
-      .where("company", "==", company)
-      .where("kind", "==", "repro")
-      .limit(50)
-      .get();
-    const companyHasHadFreeJob = prior.docs.some((d) => !!d.data()?.jobNumber);
+    // true = it has, false = confirmed never, null = cannot be sure. The page
+    // shows "First job free" ONLY on false. Cam 2026-10-27.
+    let companyHasHadFreeJob = null;
+    if (company && customer) {
+      const prior = await db
+        .collection(COL_SUBMISSIONS)
+        .where("company", "==", company)
+        .where("kind", "==", "repro")
+        .limit(FREE_JOB_CHECK_LIMIT)
+        .get();
+      companyHasHadFreeJob = firstJobAnswer({
+        company,
+        customerFound: true,
+        sheetJobNumbers: prior.docs.map((d) => d.data()?.jobNumber || null),
+      });
+    }
 
     return NextResponse.json({
       company,

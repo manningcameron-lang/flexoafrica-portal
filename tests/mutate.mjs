@@ -703,6 +703,67 @@ const MUTATIONS = [
     find: "          Order Plates instead",
     replace: "          Order plates instead",
   },
+  // ─── "First job free" shown only once confirmed ──────────────────────────
+  {
+    label: "the page says free while the check is still loading",
+    file: "lib/amber-pricing.mjs",
+    find: "  return terms?.companyHasHadFreeJob === false;",
+    replace: "  return !terms?.companyHasHadFreeJob;",
+  },
+  {
+    label: "the page ignores the check and goes back to its old reading",
+    file: "lib/amber-pricing.mjs",
+    find: "  return priceReproJob({ companyHasHadFreeJob: !freeJobConfirmed(terms) });",
+    replace: "  return priceReproJob({ companyHasHadFreeJob: !!terms?.companyHasHadFreeJob });",
+  },
+  {
+    label: "a login with no company is told free",
+    file: "lib/amber-pricing.mjs",
+    find: "  if (!String(company).trim()) return null;",
+    replace: "",
+  },
+  {
+    label: "a company not on the customer list is told free",
+    file: "lib/amber-pricing.mjs",
+    find: "  if (!customerFound) return null;",
+    replace: "",
+  },
+  {
+    label: "a company that already had its free job is told free again",
+    file: "lib/amber-pricing.mjs",
+    find: "  if (sheetJobNumbers.some((n) => !!n)) return true;",
+    replace: "",
+  },
+  {
+    label: "a full page of sheets is treated as proof of a free job",
+    file: "lib/amber-pricing.mjs",
+    find: "  if (sheetJobNumbers.length >= readLimit) return null;",
+    replace: "",
+  },
+  {
+    label: "the AMBER page goes back to saying free while loading",
+    file: "app/amber/page.jsx",
+    find: "    return priceShownToCustomer(terms);",
+    replace: "    return priceReproJob({ companyHasHadFreeJob: !!terms?.companyHasHadFreeJob });",
+  },
+  {
+    label: "the price check says free when it cannot find the company",
+    file: "app/api/amber/price/route.js",
+    find: "    let companyHasHadFreeJob = null;",
+    replace: "    let companyHasHadFreeJob = false;",
+  },
+  {
+    label: "the price check only reads 50 sheets again",
+    file: "app/api/amber/price/route.js",
+    find: "        .limit(FREE_JOB_CHECK_LIMIT)",
+    replace: "        .limit(50)",
+  },
+  {
+    label: "the price check runs for a company not on the customer list",
+    file: "app/api/amber/price/route.js",
+    find: "    if (company && customer) {",
+    replace: "    if (company) {",
+  },
 ];
 
 function hash(text) {
