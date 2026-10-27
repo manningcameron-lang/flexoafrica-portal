@@ -666,6 +666,43 @@ const MUTATIONS = [
     find: "    if (user?.uid && isStaff(profile) && !profile?.company) {",
     replace: "    if (false) {",
   },
+  // ─── button labels ────────────────────────────────────────────────────────
+  {
+    label: "the menu goes back to Order artwork with a small a",
+    file: "components/Nav.jsx",
+    find: '  { href: "/amber", label: "Order Artwork" },',
+    replace: '  { href: "/amber", label: "Order artwork" },',
+  },
+  {
+    label: "the ordering page artwork card goes back to a small a",
+    file: "app/order/page.jsx",
+    find: '            title="Order Artwork"',
+    replace: '            title="Order artwork"',
+  },
+  {
+    label: "the ordering page artwork button goes back to a small a",
+    file: "app/order/page.jsx",
+    find: '            cta="Order Artwork"',
+    replace: '            cta="Order artwork"',
+  },
+  {
+    label: "the ordering page plates card goes back to a small p",
+    file: "app/order/page.jsx",
+    find: '            title="Order Plates"',
+    replace: '            title="Order plates"',
+  },
+  {
+    label: "the ordering page plates button goes back to a small p",
+    file: "app/order/page.jsx",
+    find: '            cta="Order Plates"',
+    replace: '            cta="Order plates"',
+  },
+  {
+    label: "the AMBER page link goes back to Order plates instead",
+    file: "app/amber/page.jsx",
+    find: "          Order Plates instead",
+    replace: "          Order plates instead",
+  },
 ];
 
 function hash(text) {

@@ -315,7 +315,7 @@ function AmberPageInner() {
       <p className="mt-4 text-sm text-ink-muted">
         Already have a plate-ready file and just want the plates?{" "}
         <a href="/order/new" className="font-semibold text-accent-600 hover:underline">
-          Order plates instead
+          Order Plates instead
         </a>
         , where your price and payment are worked out for you.
       </p>
