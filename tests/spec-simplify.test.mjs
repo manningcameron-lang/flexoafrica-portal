@@ -57,7 +57,7 @@ test("form: press, plate thickness, screen ruling and distortion are not asked",
 
 test("form: everything Cam ticked is still asked", () => {
   const keys = REQUIRED_FIELDS.map((f) => f.key);
-  for (const kept of ["description", "printer", "bagType", "material", "printSide",
+  for (const kept of ["description", "bagType", "material", "printSide",
     "widthMm", "pitchMm", "across", "around", "cylinder", "printDirection", "colours"]) {
     assert.equal(keys.includes(kept), true, kept);
   }
@@ -74,7 +74,7 @@ test("form: the page no longer shows the four boxes", () => {
   assert.equal(page.includes('label="Plate thickness"'), false);
   assert.equal(page.includes('label="Screen ruling"'), false);
   assert.equal(page.includes('label="Distortion"'), false);
-  assert.ok(page.includes('<Text label="Printer" hint="Who prints it, for example Crown Bag"'));
+  assert.ok(page.includes('<Text label="Printer (if you know it)" hint="Who prints it, for example Crown Bag. Leave it blank if you are not sure"'));
 });
 
 // ─── the job system is told those boxes wait on us ───────────────────────────
@@ -122,13 +122,32 @@ test("customer: a job waiting on us still gets an email with its number", () => 
 test("customer: that email promises no time it cannot keep", () => {
   const got = buildEmail(JOB_RECEIVED, { jobNumber: "FA005460", jobName: "Klipdrif Charcoal 4kg", link: "https://portal.flexoafrica.com/jobs" });
   assert.equal(got.subject, "Your job FA005460 is with AMBER");
-  assert.ok(got.text.includes("Got it. Your job is FA005460, Klipdrif Charcoal 4kg. We are confirming the plate settings for your printer"));
+  assert.ok(got.text.includes("Got it. Your job is FA005460, Klipdrif Charcoal 4kg. We are confirming your printer and its plate settings"));
   assert.ok(got.text.includes("within 24 working hours of that"));
   assert.deepEqual(got.copyTo, []);
 });
 
 test("customer: the page says the same thing after Submit", () => {
   const page = read("app/amber/page.jsx");
-  assert.ok(page.includes("We are confirming the plate settings for your printer, and AMBER starts as soon as they are in."));
+  assert.ok(page.includes("We are confirming your printer and its plate settings, and AMBER starts as soon as they are in."));
   assert.equal(page.includes("You told us you were not sure about a few press details"), false);
+});
+
+// ─── Printer is optional (MIS PR #72 live 11 Nov 2026) ───────────────────────
+
+test("printer: a customer who does not know their printer can still send the job", () => {
+  const sub = { files: [{ path: "a.pdf" }], notSure: [], spec: { ...SPEC, printer: "" } };
+  assert.deepEqual(missingSpecFields(sub), []);
+  assert.equal(REQUIRED_FIELDS.some((f) => f.key === "printer"), false);
+});
+
+test("printer: a blank printer is not faked as Not sure (the job system handles blank)", () => {
+  const sub = { files: [{ path: "a.pdf" }], notSure: [], spec: { ...SPEC, printer: "" } };
+  assert.equal(notSureForMis(sub).includes("printer"), false);
+});
+
+test("printer: the box says it is optional", () => {
+  const page = read("app/amber/page.jsx");
+  assert.ok(page.includes('label="Printer (if you know it)"'));
+  assert.equal(page.includes('<Text label="Printer" '), false);
 });

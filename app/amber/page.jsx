@@ -273,7 +273,7 @@ function AmberPageInner() {
         <p className="mt-3 text-ink">
           Your job is <strong>{result.jobNumber}</strong>.
           {waiting
-            ? " We are confirming the plate settings for your printer, and AMBER starts as soon as they are in. You will have your plate-ready file and PDF proof within 24 working hours of that."
+            ? " We are confirming your printer and its plate settings, and AMBER starts as soon as they are in. You will have your plate-ready file and PDF proof within 24 working hours of that."
             : result.dueSaid
               ? <> You will have your plate-ready file and PDF proof by <strong>{result.dueSaid}</strong>.</>
               : " You will have your plate-ready file and PDF proof shortly."}
@@ -389,7 +389,7 @@ function AmberPageInner() {
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Text label="Job name" hint="For example: Bordeaux Washed Potatoes 10kg"
             value={spec.description} onChange={(v) => update({ description: v })} />
-          <Text label="Printer" hint="Who prints it, for example Crown Bag"
+          <Text label="Printer (if you know it)" hint="Who prints it, for example Crown Bag. Leave it blank if you are not sure"
             value={spec.printer} onChange={(v) => update({ printer: v })} />
 
           <Choose label="Product type" value={spec.bagType} options={TYPE_OPTIONS}

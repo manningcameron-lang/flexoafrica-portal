@@ -895,8 +895,27 @@ const MUTATIONS = [
   {
     label: "the page shows the plate thickness box again",
     file: "app/amber/page.jsx",
-    find: '          <Text label="Printer" hint="Who prints it, for example Crown Bag"',
-    replace: '          <Choose label="Plate thickness" value={spec.plateThickness} options={[]} onChange={() => {}} />\n          <Text label="Printer" hint="Who prints it"',
+    find: '          <Text label="Printer (if you know it)" hint="Who prints it, for example Crown Bag. Leave it blank if you are not sure"',
+    replace: '          <Choose label="Plate thickness" value={spec.plateThickness} options={[]} onChange={() => {}} />\n          <Text label="Printer (if you know it)" hint="Who prints it"',
+  },
+  // ─── Printer optional (Cam 2026-11-11, MIS PR #72) ───────────────────────
+  {
+    label: "printer is required of the customer again",
+    file: "lib/amber-spec.mjs",
+    find: '  { key: "description",     label: "Job name" },\n  { key: "bagType",',
+    replace: '  { key: "description",     label: "Job name" },\n  { key: "printer",         label: "Printer" },\n  { key: "bagType",',
+  },
+  {
+    label: "the printer box stops saying it is optional",
+    file: "app/amber/page.jsx",
+    find: '          <Text label="Printer (if you know it)" hint=',
+    replace: '          <Text label="Printer" hint=',
+  },
+  {
+    label: "the waiting email forgets the printer may be unknown",
+    file: "lib/amber-emails.mjs",
+    find: '            "your printer and its plate settings, and AMBER starts as soon as they " +',
+    replace: '            "the plate settings for your printer, and AMBER starts as soon as they " +',
   },
 ];
 
