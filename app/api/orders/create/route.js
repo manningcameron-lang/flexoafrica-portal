@@ -6,6 +6,8 @@ import { priceLineItems, calcOrderTotals } from "@/lib/pricing";
 import { matchCustomer } from "@/lib/company-match";
 import { PORTAL_DEMO_MODE, formatOrderNumber, formatJobNumber } from "@/lib/order-format";
 import { jobsForOrder } from "@/lib/order-jobs.mjs";
+import { buildPlateOrderAlert } from "@/lib/sales-alert.mjs";
+import { sendSalesAlert } from "@/lib/amber-server";
 
 /**
  * POST /api/orders/create
@@ -316,6 +318,42 @@ export async function POST(request) {
         colours: planned.colours,
         plateCount: planned.plates.length,
       });
+    }
+
+    // ─── 7. Tell sales@ (Cam 2026-11-11) ──────────────────────────────────
+    // A plate order used to email Flexo Africa nothing at all. Best effort:
+    // the order and its jobs are already saved, so an email failure is logged
+    // and never turns a good order into an error for the customer.
+    if (!PORTAL_DEMO_MODE) {
+      try {
+        const alert = buildPlateOrderAlert({
+          order: {
+            orderNumber,
+            customerCompany: company,
+            customerName: profile.contactName || "",
+            customerEmail: profile.email || decoded.email || "",
+            customerPhone: profile.phone || "",
+            paymentTerms,
+            poNumber: String(header.poNumber || "").trim(),
+            orderTotalIncVat: totals.total,
+            deliveryMethod,
+            deliveryAddress: String(header.deliveryAddress || "").trim(),
+            requiredByDate: header.requiredByDate || "",
+            tier,
+            matchedCustomer: !!customer,
+          },
+          jobs: createdJobs.map((j, i) => ({
+            jobName: j.jobName,
+            description: plannedJobs[i]?.description || "",
+            colours: j.colours,
+            plateCount: j.plateCount,
+          })),
+        });
+        await sendSalesAlert({ ...alert, replyTo: profile.email || decoded.email });
+        await orderRef.update({ salesAlertSentAt: FieldValue.serverTimestamp() });
+      } catch (err) {
+        console.error("orders/create: sales@ new-order email failed", err);
+      }
     }
 
     return NextResponse.json({

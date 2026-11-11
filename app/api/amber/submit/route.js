@@ -6,7 +6,8 @@ import {
   mayCustomerSubmit,
   readMisAnswer,
 } from "@/lib/amber-submit-rules.mjs";
-import { COL_SUBMISSIONS, sendAmberReply } from "@/lib/amber-server";
+import { COL_SUBMISSIONS, sendAmberReply, sendSalesAlert } from "@/lib/amber-server";
+import { buildArtworkJobAlert } from "@/lib/sales-alert.mjs";
 import { JOB_MADE } from "@/lib/amber-emails.mjs";
 
 /**
@@ -167,6 +168,30 @@ export async function POST(request) {
       submittedAt: new Date(),
       updatedAt: new Date(),
     });
+
+    // sales@ hears about EVERY new job, including one still waiting on us,
+    // and before the customer's email so a failure there cannot stop it.
+    // Not when Submit was pressed twice for the same job. Never undoes the job.
+    if (!answer.again) {
+      try {
+        const alert = buildArtworkJobAlert({
+          jobNumber: answer.jobNumber,
+          jobName: submission.spec?.description || submission.emailSubject || "",
+          company: submission.company || user?.company || "",
+          customerName: user?.contactName || user?.name || "",
+          customerEmail: user?.email || "",
+          dueSaid: answer.dueSaid,
+          firstFree: answer.firstFree,
+          waitingOn: answer.waitingOn,
+          fileCount: Array.isArray(submission.files) ? submission.files.length : 0,
+          warnings: answer.warnings,
+        });
+        await sendSalesAlert({ ...alert, replyTo: user?.email });
+        await ref.update({ salesAlertSentAt: new Date() });
+      } catch (err) {
+        console.error("amber/submit: sales@ new-job email failed", err);
+      }
+    }
 
     // The "job made" email only goes out once the job is really ready to be
     // worked on. A job still waiting on us would promise a time we cannot keep.

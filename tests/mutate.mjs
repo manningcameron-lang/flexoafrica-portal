@@ -226,10 +226,10 @@ const MUTATIONS = [
     replace: '          "Hi there! To start a job you need a " +',
   },
   {
-    label: "the job-made email stops copying sales@",
+    label: "the job-made email copies sales@ again, so sales@ gets it twice",
     file: "lib/amber-emails.mjs",
-    find: "        copyTo: [SALES_INBOX],",
-    replace: "        copyTo: [],",
+    find: "        // never sent for. A copy here as well would arrive twice. Cam 2026-11-11.\n        copyTo: [],",
+    replace: "        // never sent for. A copy here as well would arrive twice. Cam 2026-11-11.\n        copyTo: [SALES_INBOX],",
   },
 
   // ─── plate order → FA jobs (one job per LINE, never per colour) ───────────
@@ -763,6 +763,85 @@ const MUTATIONS = [
     file: "app/api/amber/price/route.js",
     find: "    if (company && customer) {",
     replace: "    if (company) {",
+  },
+  // ─── sales@ hears about every portal order (Cam 2026-11-11) ──────────────
+  {
+    label: "the sales@ email goes to somebody else",
+    file: "lib/sales-alert.mjs",
+    find: 'export const SALES_ALERT_TO = "sales@flexoafrica.com";',
+    replace: 'export const SALES_ALERT_TO = "admin@flexoafrica.com";',
+  },
+  {
+    label: "an unpaid card order is no longer flagged",
+    file: "lib/sales-alert.mjs",
+    find: '      "Payment: CARD, NOT PAID YET. The jobs are already on the MIS. " +',
+    replace: '      "Payment: card. " +',
+  },
+  {
+    label: "a company not on the customer list is no longer flagged",
+    file: "lib/sales-alert.mjs",
+    find: "  if (order.matchedCustomer === false) {",
+    replace: "  if (false) {",
+  },
+  {
+    label: "the plate lines lose their colours",
+    file: "lib/sales-alert.mjs",
+    find: '        (colours.length ? ` (${colours.join(", ")})` : ""),',
+    replace: '        "",',
+  },
+  {
+    label: "a job waiting on a Not sure box is not called out",
+    file: "lib/sales-alert.mjs",
+    find: "  const waiting = waitingOn.length > 0;",
+    replace: "  const waiting = false;",
+  },
+  {
+    label: "a first free job is shown at full price",
+    file: "lib/sales-alert.mjs",
+    find: '`Price: ${job.firstFree ? "FIRST JOB FREE"',
+    replace: '`Price: ${false ? "FIRST JOB FREE"',
+  },
+  {
+    label: "MIS warnings are dropped from the email",
+    file: "lib/sales-alert.mjs",
+    find: "  if (warnings.length) {",
+    replace: "  if (false) {",
+  },
+  {
+    label: "a customer's line break can add a line to the email",
+    file: "lib/sales-alert.mjs",
+    find: '    .replace(/[\\r\\n\\t]+/g, " ")',
+    replace: '    .replace(/[\\t]+/g, " ")',
+  },
+  {
+    label: "rands lose their cents comma",
+    file: "lib/sales-alert.mjs",
+    find: '  return `${n < 0 ? "-" : ""}R${spaced},${cents}`;',
+    replace: '  return `${n < 0 ? "-" : ""}R${spaced}.${cents}`;',
+  },
+  {
+    label: "a plate order stops emailing sales@",
+    file: "app/api/orders/create/route.js",
+    find: "        await sendSalesAlert({ ...alert, replyTo: profile.email || decoded.email });",
+    replace: "        // sales@ email removed",
+  },
+  {
+    label: "an artwork Submit stops emailing sales@",
+    file: "app/api/amber/submit/route.js",
+    find: "        await sendSalesAlert({ ...alert, replyTo: user?.email });",
+    replace: "        // sales@ email removed",
+  },
+  {
+    label: "a job waiting on us no longer emails sales@",
+    file: "app/api/amber/submit/route.js",
+    find: "    if (!answer.again) {\n      try {\n        const alert = buildArtworkJobAlert({",
+    replace: "    if (!answer.again && answer.outcome === \"made\") {\n      try {\n        const alert = buildArtworkJobAlert({",
+  },
+  {
+    label: "the sender writes to the customer as well",
+    file: "lib/amber-server.js",
+    find: "    to: [SALES_ALERT_TO],",
+    replace: "    to: [SALES_ALERT_TO, reply],",
   },
 ];
 
