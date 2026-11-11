@@ -18,11 +18,8 @@ import {
   MATERIAL_OPTIONS,
   NOT_SURE_ALLOWED,
   NOT_SURE_LABELS,
-  PLATE_DISTORTION_OPTIONS,
-  PLATE_THICKNESS_OPTIONS,
   PRINT_DIRECTION_OPTIONS,
   PRINT_SIDE_OPTIONS,
-  SCREEN_RULING_OPTIONS,
   TYPE_OPTIONS,
   missingSpecFields,
   notSureFields,
@@ -276,7 +273,7 @@ function AmberPageInner() {
         <p className="mt-3 text-ink">
           Your job is <strong>{result.jobNumber}</strong>.
           {waiting
-            ? " You told us you were not sure about a few press details, so we will work those out for you. The 24 hours starts once they are in."
+            ? " We are confirming the plate settings for your printer, and AMBER starts as soon as they are in. You will have your plate-ready file and PDF proof within 24 working hours of that."
             : result.dueSaid
               ? <> You will have your plate-ready file and PDF proof by <strong>{result.dueSaid}</strong>.</>
               : " You will have your plate-ready file and PDF proof shortly."}
@@ -392,8 +389,8 @@ function AmberPageInner() {
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Text label="Job name" hint="For example: Bordeaux Washed Potatoes 10kg"
             value={spec.description} onChange={(v) => update({ description: v })} />
-          <Text label="Printer" value={spec.printer} onChange={(v) => update({ printer: v })} />
-          <Text label="Press" value={spec.press} onChange={(v) => update({ press: v })} />
+          <Text label="Printer" hint="Who prints it, for example Crown Bag"
+            value={spec.printer} onChange={(v) => update({ printer: v })} />
 
           <Choose label="Product type" value={spec.bagType} options={TYPE_OPTIONS}
             onChange={(v) => update({ bagType: v })} />
@@ -407,20 +404,10 @@ function AmberPageInner() {
           <Num label="Across" value={spec.across} onChange={(v) => update({ across: v })} />
           <Num label="Around" value={spec.around} onChange={(v) => update({ around: v })} />
 
-          <Choose label="Plate thickness" value={spec.plateThickness} options={PLATE_THICKNESS_OPTIONS}
-            notSureKey="plateThickness" notSure={notSure} onNotSure={toggleNotSure}
-            onChange={(v) => update({ plateThickness: v })} />
-          <Choose label="Screen ruling" value={spec.screenRuling} options={SCREEN_RULING_OPTIONS}
-            notSureKey="screenRuling" notSure={notSure} onNotSure={toggleNotSure}
-            onChange={(v) => update({ screenRuling: v })} />
-
           <Text label="Cylinder" hint="The cylinder this prints on"
             value={spec.cylinder} onChange={(v) => update({ cylinder: v })}
             notSureKey="cylinder" notSure={notSure} onNotSure={toggleNotSure} />
 
-          <Choose label="Distortion" value={spec.plateDistortion} options={PLATE_DISTORTION_OPTIONS}
-            notSureKey="plateDistortion" notSure={notSure} onNotSure={toggleNotSure}
-            onChange={(v) => update({ plateDistortion: v })} />
           <Choose label="Print direction" value={spec.printDirection} options={PRINT_DIRECTION_OPTIONS}
             onChange={(v) => update({ printDirection: v })} />
 

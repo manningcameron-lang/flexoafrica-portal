@@ -178,7 +178,12 @@ test("missing list: names every box that is still empty, in form order", () => {
   assert.equal(got.includes("Job name"), false);
   assert.equal(got[0], "Printer");
   assert.equal(got.includes("Inks, in print order"), true);
-  assert.equal(got.length, 15);
+  // 11 Nov 2026: Press, Plate thickness, Screen ruling and Distortion are no
+  // longer asked, so they are never on the customer's missing list.
+  assert.equal(got.length, 11);
+  for (const gone of ["Press", "Plate thickness", "Screen ruling", "Distortion"]) {
+    assert.equal(got.includes(gone), false, gone);
+  }
 });
 
 test("missing list: no artwork is itself a missing item", () => {

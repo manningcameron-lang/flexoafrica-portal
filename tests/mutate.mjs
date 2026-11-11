@@ -843,6 +843,61 @@ const MUTATIONS = [
     find: "    to: [SALES_ALERT_TO],",
     replace: "    to: [SALES_ALERT_TO, reply],",
   },
+  // ─── the shorter AMBER form (Cam 2026-11-11) ─────────────────────────────
+  {
+    label: "plate thickness is asked of the customer again",
+    file: "lib/amber-spec.mjs",
+    find: '  { key: "printDirection",  label: "Print direction" },\n  { key: "colours",         label: "Inks, in print order" },\n];',
+    replace: '  { key: "printDirection",  label: "Print direction" },\n  { key: "colours",         label: "Inks, in print order" },\n  { key: "plateThickness",  label: "Plate thickness" },\n];',
+  },
+  {
+    label: "distortion is no longer parked with us",
+    file: "lib/amber-spec.mjs",
+    find: '  { key: "plateDistortion", label: "Distortion" },\n];\n\n// Gear and teeth are asked for on LABELS only',
+    replace: '];\n\n// Gear and teeth are asked for on LABELS only',
+  },
+  {
+    label: "a value already on the sheet is parked anyway",
+    file: "lib/amber-spec.mjs",
+    find: "    if (isBlank(spec[field.key]) && !out.includes(field.key)) out.push(field.key);",
+    replace: "    if (!out.includes(field.key)) out.push(field.key);",
+  },
+  {
+    label: "the parked boxes are added twice",
+    file: "lib/amber-spec.mjs",
+    find: "    if (isBlank(spec[field.key]) && !out.includes(field.key)) out.push(field.key);",
+    replace: "    if (isBlank(spec[field.key])) out.push(field.key);",
+  },
+  {
+    label: "Submit stops telling the job system what waits on us",
+    file: "app/api/amber/submit/route.js",
+    find: "      await ref.update({ notSure: notSureNow, updatedAt: new Date() });",
+    replace: "      // not saved",
+  },
+  {
+    label: "a job waiting on us gets no email again",
+    file: "app/api/amber/submit/route.js",
+    find: '    if ((answer.outcome === "made" || answer.outcome === "made_waiting_on_us") && !answer.again) {',
+    replace: '    if (answer.outcome === "made" && !answer.again) {',
+  },
+  {
+    label: "a job waiting on us is promised a due time",
+    file: "app/api/amber/submit/route.js",
+    find: '        kind: answer.outcome === "made" ? JOB_MADE : JOB_RECEIVED,',
+    replace: "        kind: JOB_MADE,",
+  },
+  {
+    label: "the waiting email promises a time anyway",
+    file: "lib/amber-emails.mjs",
+    find: '            "are in. You will have your plate-ready file and PDF proof within 24 " +',
+    replace: '            "are in. You will have your plate-ready file and PDF proof within 24 hours, guaranteed " +',
+  },
+  {
+    label: "the page shows the plate thickness box again",
+    file: "app/amber/page.jsx",
+    find: '          <Text label="Printer" hint="Who prints it, for example Crown Bag"',
+    replace: '          <Choose label="Plate thickness" value={spec.plateThickness} options={[]} onChange={() => {}} />\n          <Text label="Printer" hint="Who prints it"',
+  },
 ];
 
 function hash(text) {
