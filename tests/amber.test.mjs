@@ -471,7 +471,9 @@ test("emails: the six approved texts are word for word what Cam approved", () =>
   assert.ok(made.text.includes(
     "Got it. Your job is FA005341, Bordeaux Washed Potatoes 10kg. AMBER is on it, and you will have your plate-ready file and PDF proof by Tue 28 Oct, 16:00.",
   ));
-  assert.deepEqual(made.copyTo, ["sales@flexoafrica.com"]);
+  // sales@ gets its own new-job email now (lib/sales-alert.mjs), so the
+  // customer's email is not copied as well. Cam 2026-11-11.
+  assert.deepEqual(made.copyTo, []);
   assert.ok(buildEmail("no_file").text.includes("We couldn't find artwork attached."));
   assert.ok(buildEmail("too_big").text.includes("Your file is too big for email."));
   assert.ok(buildEmail("suspended").text.includes(
