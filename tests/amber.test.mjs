@@ -176,9 +176,16 @@ test("missing list: a complete job is missing nothing", () => {
 test("missing list: names every box that is still empty, in form order", () => {
   const got = missingSpecFields({ files: [{ path: "a" }], notSure: [], spec: { description: "X" } });
   assert.equal(got.includes("Job name"), false);
-  assert.equal(got[0], "Printer");
+  // Printer is optional since 11 Nov 2026, so the first gap is Product type.
+  assert.equal(got[0], "Product type");
+  assert.equal(got.includes("Printer"), false);
   assert.equal(got.includes("Inks, in print order"), true);
-  assert.equal(got.length, 15);
+  // 11 Nov 2026: Press, Plate thickness, Screen ruling and Distortion are no
+  // longer asked, so they are never on the customer's missing list.
+  assert.equal(got.length, 10);
+  for (const gone of ["Press", "Plate thickness", "Screen ruling", "Distortion"]) {
+    assert.equal(got.includes(gone), false, gone);
+  }
 });
 
 test("missing list: no artwork is itself a missing item", () => {
@@ -254,7 +261,8 @@ test("not sure: a customer cannot shrug at the job name or the artwork", () => {
   // else in that list is ignored, so it cannot be used to skip a required box.
   const sub = { files: [{ path: "a" }], notSure: ["description", "printer"], spec: { ...FULL_SPEC, description: "", printer: "" } };
   assert.deepEqual(notSureKeys(sub), []);
-  assert.deepEqual(missingSpecFields(sub), ["Job name", "Printer"]);
+  // (Printer is optional since 11 Nov 2026, so only the job name is missing.)
+  assert.deepEqual(missingSpecFields(sub), ["Job name"]);
 });
 
 test("not sure: Submit now hands it to the job system rather than parking it", () => {

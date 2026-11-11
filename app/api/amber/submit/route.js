@@ -8,7 +8,8 @@ import {
 } from "@/lib/amber-submit-rules.mjs";
 import { COL_SUBMISSIONS, sendAmberReply, sendSalesAlert } from "@/lib/amber-server";
 import { buildArtworkJobAlert } from "@/lib/sales-alert.mjs";
-import { JOB_MADE } from "@/lib/amber-emails.mjs";
+import { JOB_MADE, JOB_RECEIVED } from "@/lib/amber-emails.mjs";
+import { notSureForMis } from "@/lib/amber-spec.mjs";
 
 /**
  * POST /api/amber/submit   body: { submissionId }
@@ -113,6 +114,16 @@ export async function POST(request) {
       );
     }
 
+    // The boxes the form no longer asks (plate thickness, screen ruling,
+    // distortion) are handed to the job system as WAITING ON US, so it makes
+    // the job instead of refusing it for them. It reads the sheet itself, so
+    // the list is saved on the sheet first. Cam 2026-11-11.
+    const notSureNow = notSureForMis(submission);
+    const notSureBefore = Array.isArray(submission.notSure) ? submission.notSure : [];
+    if (notSureNow.join("|") !== notSureBefore.join("|")) {
+      await ref.update({ notSure: notSureNow, updatedAt: new Date() });
+    }
+
     let status = 0;
     let parsed = null;
     try {
@@ -193,14 +204,16 @@ export async function POST(request) {
       }
     }
 
-    // The "job made" email only goes out once the job is really ready to be
-    // worked on. A job still waiting on us would promise a time we cannot keep.
-    if (answer.outcome === "made" && !answer.again) {
+    // The customer always hears their job number. A job ready to start gets
+    // its due time; one still waiting on us (now the usual case, because the
+    // printer's plate settings are filled in by Flexo Africa) gets a "we are
+    // confirming the plate settings" email, never a time we cannot keep.
+    if ((answer.outcome === "made" || answer.outcome === "made_waiting_on_us") && !answer.again) {
       const jobName =
         submission.spec?.description || submission.emailSubject || "your job";
       await sendAmberReply({
         to: user.email,
-        kind: JOB_MADE,
+        kind: answer.outcome === "made" ? JOB_MADE : JOB_RECEIVED,
         email: { from: user.email },
         data: {
           jobNumber: answer.jobNumber,

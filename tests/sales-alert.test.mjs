@@ -199,7 +199,7 @@ test("wiring: an artwork Submit emails sales@ for every new job, waiting or not"
   const block = route.slice(route.indexOf("if (!answer.again) {"), route.indexOf("buildArtworkJobAlert({"));
   assert.ok(block.length > 0 && block.length < 80);
   // Sent before the customer's own email, so that cannot block it.
-  assert.ok(route.indexOf("buildArtworkJobAlert({") < route.indexOf("kind: JOB_MADE,"));
+  assert.ok(route.indexOf("buildArtworkJobAlert({") < route.indexOf('kind: answer.outcome === "made" ? JOB_MADE : JOB_RECEIVED,'));
 });
 
 test("wiring: the sender only ever writes to sales@ and reports a failure", () => {
