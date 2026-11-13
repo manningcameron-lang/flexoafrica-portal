@@ -223,7 +223,7 @@ test("gear and teeth are asked for on a Label, and never on a bag", () => {
   const bag = { files: [{ path: "a" }], notSure: [], spec: { ...FULL_SPEC, bagType: "SO Bag" } };
   const label = { files: [{ path: "a" }], notSure: [], spec: { ...FULL_SPEC, bagType: "Label" } };
   assert.deepEqual(missingSpecFields(bag), []);
-  assert.deepEqual(missingSpecFields(label), ["Press gear", "Teeth"]);
+  assert.deepEqual(missingSpecFields(label), ["Press gear", "Tooth size"]);
   assert.equal(requiredFieldsFor(label).length, requiredFieldsFor(bag).length + 2);
 });
 

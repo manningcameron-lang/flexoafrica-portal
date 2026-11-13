@@ -10,6 +10,7 @@ import { COL_SUBMISSIONS, sendAmberReply, sendSalesAlert } from "@/lib/amber-ser
 import { buildArtworkJobAlert } from "@/lib/sales-alert.mjs";
 import { JOB_MADE, JOB_RECEIVED } from "@/lib/amber-emails.mjs";
 import { notSureForMis } from "@/lib/amber-spec.mjs";
+import { settleLabelLayout } from "@/lib/label-gear.mjs";
 
 /**
  * POST /api/amber/submit   body: { submissionId }
@@ -120,8 +121,21 @@ export async function POST(request) {
     // the list is saved on the sheet first. Cam 2026-11-11.
     const notSureNow = notSureForMis(submission);
     const notSureBefore = Array.isArray(submission.notSure) ? submission.notSure : [];
-    if (notSureNow.join("|") !== notSureBefore.join("|")) {
-      await ref.update({ notSure: notSureNow, updatedAt: new Date() });
+    // On a Label, the cylinder and the gap round are worked out once more from
+    // the press gear, tooth size, pitch and number round, the same way the job
+    // system does, so a typed figure that disagrees never reaches the
+    // workticket. Saved on the sheet first, because the job system reads the
+    // sheet itself. Anything that is not a Label is left alone. Cam 13 Nov 2026.
+    const specBefore = submission.spec || {};
+    const specNow = settleLabelLayout(specBefore);
+    const layoutChanged =
+      String(specNow.cylinder ?? "") !== String(specBefore.cylinder ?? "") ||
+      String(specNow.gapAroundMm ?? "") !== String(specBefore.gapAroundMm ?? "");
+
+    if (notSureNow.join("|") !== notSureBefore.join("|") || layoutChanged) {
+      const patch = { notSure: notSureNow, updatedAt: new Date() };
+      if (layoutChanged) patch.spec = specNow;
+      await ref.update(patch);
     }
 
     let status = 0;
