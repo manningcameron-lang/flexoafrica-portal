@@ -477,7 +477,7 @@ test("emails: the six approved texts are word for word what Cam approved", () =>
     link: "https://portal.flexoafrica.com/jobs",
   });
   assert.ok(made.text.includes(
-    "Got it. Your job is FA005341, Bordeaux Washed Potatoes 10kg. AMBER is on it, and you will have your plate-ready file and PDF proof by Tue 28 Oct, 16:00.",
+    "Got it. Your job is FA005341, Bordeaux Washed Potatoes 10kg. AMBER is on it, and you will have your PDF proof for approval by Tue 28 Oct, 16:00.",
   ));
   // sales@ gets its own new-job email now (lib/sales-alert.mjs), so the
   // customer's email is not copied as well. Cam 2026-11-11.

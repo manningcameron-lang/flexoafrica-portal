@@ -306,10 +306,10 @@ function AmberPageInner() {
         <p className="mt-3 text-ink">
           Your job is <strong>{result.jobNumber}</strong>.
           {waiting
-            ? " We are confirming your printer and its plate settings, and AMBER starts as soon as they are in. You will have your plate-ready file and PDF proof within 24 working hours of that."
+            ? " We are confirming your printer and its plate settings, and AMBER starts as soon as they are in. You will have your PDF proof for approval within 24 working hours of that."
             : result.dueSaid
-              ? <> You will have your plate-ready file and PDF proof by <strong>{result.dueSaid}</strong>.</>
-              : " You will have your plate-ready file and PDF proof shortly."}
+              ? <> You will have your PDF proof for approval by <strong>{result.dueSaid}</strong>.</>
+              : " You will have your PDF proof for approval shortly."}
         </p>
         {result.firstFree && (
           <p className="mt-2 text-ink">This one is on us: your first AMBER job is free.</p>
@@ -326,7 +326,7 @@ function AmberPageInner() {
       <h1 className="text-2xl font-semibold text-ink">Send a job to AMBER</h1>
       <p className="mt-2 text-ink-muted">
         Send us your artwork and the press details, and you get back a
-        plate-ready file and a PDF proof to sign off.
+        PDF proof for approval.
       </p>
 
       {/* The AMBER logo fills the right of the card, top to bottom. Cam 13 Nov 2026. */}
@@ -341,7 +341,7 @@ function AmberPageInner() {
         <ul className="mt-3 space-y-1 text-sm text-ink-muted">
           <li>{AMBER_REPRO_REVISIONS_INCLUDED} rounds of changes included</li>
           <li>Back within 24 hours, working days</li>
-          <li>You get a plate-ready file and a PDF proof</li>
+          <li>You get a PDF proof for approval</li>
         </ul>
         </div>
         <img

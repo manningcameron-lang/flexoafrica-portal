@@ -16,6 +16,29 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 const MUTATIONS = [
+  // ─── AMBER promises a PDF proof for approval (Cam 2026-11-13) ─────────────
+  { label: "the page intro promises a plate-ready file again", file: "app/amber/page.jsx",
+    find: "you get back a\n        PDF proof for approval.",
+    replace: "you get back a\n        plate-ready file and a PDF proof to sign off." },
+  { label: "the price card promises a plate-ready file again", file: "app/amber/page.jsx",
+    find: "          <li>You get a PDF proof for approval</li>",
+    replace: "          <li>You get a plate-ready file and a PDF proof</li>" },
+  { label: "the waiting thank-you promises a plate-ready file again", file: "app/amber/page.jsx",
+    find: "You will have your PDF proof for approval within 24 working hours of that.",
+    replace: "You will have your plate-ready file and PDF proof within 24 working hours of that." },
+  { label: "the due-time thank-you promises a plate-ready file again", file: "app/amber/page.jsx",
+    find: "<> You will have your PDF proof for approval by <strong>",
+    replace: "<> You will have your plate-ready file and PDF proof by <strong>" },
+  { label: "the no-time thank-you promises a plate-ready file again", file: "app/amber/page.jsx",
+    find: '" You will have your PDF proof for approval shortly."',
+    replace: '" You will have your plate-ready file and PDF proof shortly."' },
+  { label: "the job-made email promises a plate-ready file again", file: "lib/amber-emails.mjs",
+    find: "`and you will have your PDF proof for approval by ${data.dueText}. ` +",
+    replace: "`and you will have your plate-ready file and PDF proof by ${data.dueText}. ` +" },
+  { label: "the waiting email promises a plate-ready file again", file: "lib/amber-emails.mjs",
+    find: '"are in. You will have your PDF proof for approval within 24 " +',
+    replace: '"are in. You will have your plate-ready file and PDF proof within 24 " +' },
+
   // ─── label gear, tooth size, logo, made-up examples (Cam 2026-11-13) ──────
   { label: "a CP tooth is the wrong size", file: "lib/label-gear.mjs",
     find: "export const CP_MM_PER_TOOTH = 3.175; // 1/8 inch",
@@ -990,8 +1013,8 @@ const MUTATIONS = [
   {
     label: "the waiting email promises a time anyway",
     file: "lib/amber-emails.mjs",
-    find: '            "are in. You will have your plate-ready file and PDF proof within 24 " +',
-    replace: '            "are in. You will have your plate-ready file and PDF proof within 24 hours, guaranteed " +',
+    find: '            "are in. You will have your PDF proof for approval within 24 " +',
+    replace: '            "are in. You will have your PDF proof for approval within 24 hours, guaranteed " +',
   },
   {
     label: "the page shows the plate thickness box again",
