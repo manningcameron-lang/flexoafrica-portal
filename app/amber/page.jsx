@@ -43,6 +43,15 @@ import {
   repeatFromTeeth,
   settleLabelLayout,
 } from "@/lib/label-gear.mjs";
+import {
+  FLAVOURS_AND_TRAPPING_LIVE,
+  MAX_FLAVOURS,
+  addFlavour,
+  flavourCount,
+  flavoursOf,
+  removeFlavour,
+  updateFlavour,
+} from "@/lib/amber-variants.mjs";
 
 
 export default function AmberPage() {
@@ -146,8 +155,10 @@ function AmberPageInner() {
   const price = useMemo(() => {
     if (kind !== CHOICE_REPRO) return null;
     // "Free" only once the price check has confirmed it. Cam 2026-10-27.
-    return priceShownToCustomer(terms);
-  }, [kind, terms]);
+    // R499 a flavour, the first one free when confirmed. Cam 13 Nov 2026.
+    return priceShownToCustomer(terms, flavourCount(spec));
+  }, [kind, terms, spec]);
+  const flavours = flavoursOf(spec);
 
   const ensureSubmission = useCallback(async () => {
     if (staff) throw new Error(READ_ONLY_MESSAGE);
@@ -312,7 +323,11 @@ function AmberPageInner() {
               : " You will have your PDF proof for approval shortly."}
         </p>
         {result.firstFree && (
-          <p className="mt-2 text-ink">This one is on us: your first AMBER job is free.</p>
+          <p className="mt-2 text-ink">
+            {flavourCount(spec) > 1
+              ? "Your first flavour is on us: your first AMBER job is free."
+              : "This one is on us: your first AMBER job is free."}
+          </p>
         )}
         <a href="/jobs" className="inline-block mt-6 px-4 py-2 bg-accent-500 text-white rounded-md font-semibold">
           Track it in My Jobs
@@ -336,11 +351,16 @@ function AmberPageInner() {
         <div className="mt-1 text-accent-600 font-semibold">
           {price?.free
             ? "First job free"
-            : `R${AMBER_REPRO_PRICE_EXCL_VAT} a job, excl VAT`}
+            : price?.firstFlavourFree
+              ? `First flavour free, then R${AMBER_REPRO_PRICE_EXCL_VAT} a flavour, excl VAT`
+              : `R${AMBER_REPRO_PRICE_EXCL_VAT} a job, excl VAT`}
         </div>
         <ul className="mt-3 space-y-1 text-sm text-ink-muted">
           <li>{AMBER_REPRO_REVISIONS_INCLUDED} rounds of changes included</li>
           <li>Back within 24 hours, working days</li>
+          {FLAVOURS_AND_TRAPPING_LIVE && (
+            <li>More flavours of the same artwork: R{AMBER_REPRO_PRICE_EXCL_VAT} a flavour</li>
+          )}
           <li>You get a PDF proof for approval</li>
         </ul>
         </div>
@@ -424,8 +444,9 @@ function AmberPageInner() {
           </button>
         </div>
         <p className="mt-1 text-sm text-ink-muted">
-          One job is one artwork in one size. Another flavour or another size is
-          its own job.
+          {FLAVOURS_AND_TRAPPING_LIVE
+            ? "One job is one artwork in one size. More flavours of the same artwork? Add them below: only the inks and barcode change. Another size is its own job."
+            : "One job is one artwork in one size. Another flavour or another size is its own job."}
         </p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -480,20 +501,53 @@ function AmberPageInner() {
               <LabelGapAround spec={spec} onChange={(v) => update({ gapAroundMm: v })} />
             </>
           )}
+
+          {/* Optional. Blank means we use the printer's usual trap. Cam 13 Nov 2026. */}
+          {FLAVOURS_AND_TRAPPING_LIVE && (
+            <Text label="Trapping in mm (optional)"
+              hint="How far colours overlap, for example 0.2. Leave it blank and we use your printer's usual trap"
+              value={spec.trappingMm} onChange={(v) => update({ trappingMm: v })} />
+          )}
         </div>
 
-        <div className="mt-4">
-          <Inks
-            value={spec.colours}
+        {/* One flavour: the inks and barcode as always. More than one: each
+            flavour has its own name, inks and barcode, like Variants on the
+            job system's workticket. Cam 13 Nov 2026. */}
+        {flavours.length === 0 ? (
+          <div className="mt-4">
+            <Inks
+              value={spec.colours}
+              unsure={notSure.includes("colours")}
+              onNotSure={(on) => toggleNotSure("colours", on)}
+              onChange={(v) => update({ colours: v })}
+            />
+            {FLAVOURS_AND_TRAPPING_LIVE && (
+              <button
+                type="button"
+                data-add-flavour
+                onClick={() => update(addFlavour(spec))}
+                className="mt-3 text-sm font-semibold text-accent-600 hover:underline"
+              >
+                + Add a flavour (same artwork, different inks or barcode)
+              </button>
+            )}
+          </div>
+        ) : (
+          <Flavours
+            flavours={flavours}
             unsure={notSure.includes("colours")}
             onNotSure={(on) => toggleNotSure("colours", on)}
-            onChange={(v) => update({ colours: v })}
+            onAdd={() => update(addFlavour(spec))}
+            onChange={(i, patch) => update(updateFlavour(spec, i, patch))}
+            onRemove={(i) => update(removeFlavour(spec, i))}
           />
-        </div>
+        )}
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Text label="Barcode number" hint="Leave blank if there is none"
-            value={spec.barcode} onChange={(v) => update({ barcode: v })} />
+          {flavours.length === 0 && (
+            <Text label="Barcode number" hint="Leave blank if there is none"
+              value={spec.barcode} onChange={(v) => update({ barcode: v })} />
+          )}
           <Text label="Required by" type="date"
             value={spec.requiredBy} onChange={(v) => update({ requiredBy: v })} />
           <Text label={`PO number${poRequired ? "" : " (optional)"}`}
@@ -758,7 +812,7 @@ function ChooseValued({ label, value, options, onChange, notSureKey, notSure, on
 }
 
 // Inks, in the order they print. Ten slots, same as the MIS.
-function Inks({ value, unsure, onChange, onNotSure }) {
+function Inks({ value, unsure, onChange, onNotSure, title = "Inks, in print order", hideNotSure = false }) {
   const inks = Array.isArray(value) ? value : [];
   function setInk(index, text) {
     const next = [...inks];
@@ -768,7 +822,7 @@ function Inks({ value, unsure, onChange, onNotSure }) {
   }
   return (
     <div>
-      <label className="block text-sm font-medium text-ink">Inks, in print order</label>
+      <label className="block text-sm font-medium text-ink">{title}</label>
       <div className="mt-1 grid gap-2 sm:grid-cols-5">
         {Array.from({ length: 10 }).map((_, i) => (
           <input
@@ -782,10 +836,80 @@ function Inks({ value, unsure, onChange, onNotSure }) {
           />
         ))}
       </div>
+      {!hideNotSure && (
+        <label className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+          <input type="checkbox" checked={!!unsure} onChange={(e) => onNotSure(e.target.checked)} />
+          {NOT_SURE_LABELS.colours}
+        </label>
+      )}
+    </div>
+  );
+}
+
+// The flavours of one artwork (Chocolate, Strawberry, ...). Each has only its
+// own name, inks and barcode; everything else is typed once above. Same idea
+// as Variants on the job system's workticket. Cam 13 Nov 2026.
+function Flavours({ flavours, unsure, onNotSure, onAdd, onChange, onRemove }) {
+  return (
+    <div className="mt-6" data-flavours>
+      <h3 className="text-base font-semibold text-ink">Flavours</h3>
+      <p className="mt-1 text-sm text-ink-muted">
+        Same artwork and size, different inks or barcode. R{AMBER_REPRO_PRICE_EXCL_VAT} a flavour, excl VAT.
+      </p>
       <label className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
         <input type="checkbox" checked={!!unsure} onChange={(e) => onNotSure(e.target.checked)} />
-        {NOT_SURE_LABELS.colours}
+        {NOT_SURE_LABELS.colours} (all flavours)
       </label>
+      <div className="mt-3 space-y-4">
+        {flavours.map((v, i) => (
+          <div key={v.id || i} className="border border-ink/10 rounded-md p-4" data-flavour>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label={`Flavour ${i + 1} name`} hint="For example: Chocolate">
+                <input
+                  type="text"
+                  value={v.name || ""}
+                  onChange={(e) => onChange(i, { name: e.target.value })}
+                  className={inputCls}
+                />
+              </Field>
+              <Field label="Barcode number" hint="Leave blank if there is none">
+                <input
+                  type="text"
+                  value={v.barcode || ""}
+                  onChange={(e) => onChange(i, { barcode: e.target.value })}
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Inks
+                title={`Inks for ${String(v.name || "").trim() || `flavour ${i + 1}`}, in print order`}
+                value={v.colours}
+                unsure={unsure}
+                hideNotSure
+                onChange={(colours) => onChange(i, { colours })}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => onRemove(i)}
+              className="mt-3 text-xs font-medium text-ink-muted hover:text-accent-600 hover:underline"
+            >
+              Remove this flavour
+            </button>
+          </div>
+        ))}
+      </div>
+      {flavours.length < MAX_FLAVOURS && (
+        <button
+          type="button"
+          data-add-flavour
+          onClick={onAdd}
+          className="mt-3 text-sm font-semibold text-accent-600 hover:underline"
+        >
+          + Add another flavour
+        </button>
+      )}
     </div>
   );
 }

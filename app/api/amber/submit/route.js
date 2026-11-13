@@ -210,6 +210,8 @@ export async function POST(request) {
           waitingOn: answer.waitingOn,
           fileCount: Array.isArray(submission.files) ? submission.files.length : 0,
           warnings: answer.warnings,
+          flavours: (Array.isArray(submission.spec?.variants) ? submission.spec.variants : []).map((v) => v?.name),
+          trappingMm: submission.spec?.trappingMm,
         });
         await sendSalesAlert({ ...alert, replyTo: user?.email });
         await ref.update({ salesAlertSentAt: new Date() });

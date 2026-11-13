@@ -94,7 +94,7 @@ test("check: too many sheets with no job number yet cannot be confirmed free", (
 
 test("page: the AMBER page prices from the confirmed answer only", () => {
   const page = read("app/amber/page.jsx");
-  assert.ok(page.includes("return priceShownToCustomer(terms);"));
+  assert.ok(page.includes("return priceShownToCustomer(terms, flavourCount(spec));"));
   assert.ok(!page.includes("!!terms?.companyHasHadFreeJob"));
 });
 
