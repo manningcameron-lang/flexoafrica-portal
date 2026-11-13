@@ -33,6 +33,17 @@ import {
   NEW_SUBMISSION_KIND,
   priceShownToCustomer,
 } from "@/lib/amber-pricing.mjs";
+import {
+  formatMm,
+  gapAroundCheck,
+  labelLayoutPatch,
+  maxAround,
+  mmPerTooth,
+  parseTeeth,
+  repeatFromTeeth,
+  settleLabelLayout,
+} from "@/lib/label-gear.mjs";
+
 
 export default function AmberPage() {
   return (
@@ -189,6 +200,26 @@ function AmberPageInner() {
     setSpecState((prev) => ({ ...prev, ...patch }));
   }
 
+  // A label layout box changed (gear, tooth size, cylinder, pitch, across,
+  // around, product type). Works the cylinder and the gaps out the same way
+  // the job system does. On anything that is not a Label it changes nothing
+  // but the box itself. Cam 13 Nov 2026.
+  function updateLayout(patch) {
+    const keys = Object.keys(patch);
+    setSpecState((prev) => {
+      const next = { ...prev, ...patch };
+      return { ...next, ...labelLayoutPatch(next, keys) };
+    });
+    // A cylinder worked out from the teeth is an answer, so it is no longer
+    // "Not sure".
+    if (repeatFromTeeth(
+      "gearPitch" in patch ? patch.gearPitch : spec.gearPitch,
+      "cylinderTeeth" in patch ? patch.cylinderTeeth : spec.cylinderTeeth,
+    ) != null) {
+      setNotSure((prev) => prev.filter((k) => k !== "cylinder"));
+    }
+  }
+
   function toggleNotSure(key, on) {
     setNotSure((prev) => {
       const next = prev.filter((k) => k !== key);
@@ -238,7 +269,9 @@ function AmberPageInner() {
       const id = await ensureSubmission();
       // `kind` is not sent: a sheet is what it was created as, and the
       // server ignores any attempt to change it.
-      await saveSubmission(user, { id, spec, notSure, files });
+      const settled = settleLabelLayout(spec);
+      setSpecState(settled);
+      await saveSubmission(user, { id, spec: settled, notSure, files });
       const token = await user.getIdToken();
       const res = await fetch("/api/amber/submit", {
         method: "POST",
@@ -296,7 +329,9 @@ function AmberPageInner() {
         plate-ready file and a PDF proof to sign off.
       </p>
 
-      <div className="mt-8 border border-accent-500 rounded-lg p-5">
+      {/* The AMBER logo fills the right of the card, top to bottom. Cam 13 Nov 2026. */}
+      <div className="relative mt-8 border border-accent-500 rounded-lg overflow-hidden flex items-stretch">
+        <div className="flex-1 min-w-0 p-5 sm:pr-52">
         <div className="font-semibold text-ink">Artwork by AMBER</div>
         <div className="mt-1 text-accent-600 font-semibold">
           {price?.free
@@ -308,6 +343,13 @@ function AmberPageInner() {
           <li>Back within 24 hours, working days</li>
           <li>You get a plate-ready file and a PDF proof</li>
         </ul>
+        </div>
+        <img
+          src="/images/amber-logo.svg"
+          alt="AMBER"
+          data-amber-logo
+          className="block shrink-0 self-stretch w-28 object-contain bg-[#FBF6EC] border-l border-accent-500 sm:absolute sm:inset-y-0 sm:right-0 sm:h-full sm:w-auto sm:aspect-square sm:object-cover"
+        />
       </div>
 
       <p className="mt-4 text-sm text-ink-muted">
@@ -387,40 +429,55 @@ function AmberPageInner() {
         </p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Text label="Job name" hint="For example: Bordeaux Washed Potatoes 10kg"
+          <Text label="Job name" hint="For example: Sunny Meadow Potatoes 10kg"
             value={spec.description} onChange={(v) => update({ description: v })} />
-          <Text label="Printer (if you know it)" hint="Who prints it, for example Crown Bag. Leave it blank if you are not sure"
+          <Text label="Printer (if you know it)" hint="Who prints it, for example Bright Bag Printers. Leave it blank if you are not sure"
             value={spec.printer} onChange={(v) => update({ printer: v })} />
 
           <Choose label="Product type" value={spec.bagType} options={TYPE_OPTIONS}
-            onChange={(v) => update({ bagType: v })} />
+            onChange={(v) => updateLayout({ bagType: v })} />
           <Choose label="Material" value={spec.material} options={MATERIAL_OPTIONS}
             onChange={(v) => update({ material: v })} />
           <Choose label="Print side" value={spec.printSide} options={PRINT_SIDE_OPTIONS}
             onChange={(v) => update({ printSide: v })} />
 
           <Num label="Width" suffix="mm" value={spec.widthMm} onChange={(v) => update({ widthMm: v })} />
-          <Num label="Repeat (pitch)" suffix="mm" value={spec.pitchMm} onChange={(v) => update({ pitchMm: v })} />
-          <Num label="Across" value={spec.across} onChange={(v) => update({ across: v })} />
-          <Num label="Around" value={spec.around} onChange={(v) => update({ around: v })} />
+          <Num label="Repeat (pitch)" suffix="mm" value={spec.pitchMm} onChange={(v) => updateLayout({ pitchMm: v })} />
+          <Num label="Across" value={spec.across} onChange={(v) => updateLayout({ across: v })} />
+          <Num label="Around" value={spec.around} hint={isLabel ? aroundHint(spec) : undefined}
+            onChange={(v) => updateLayout({ around: v })} />
 
-          <Text label="Cylinder" hint="The cylinder this prints on"
-            value={spec.cylinder} onChange={(v) => update({ cylinder: v })}
-            notSureKey="cylinder" notSure={notSure} onNotSure={toggleNotSure} />
+          {/* On a Label the Tooth size box sits where the Cylinder box is on a
+              bag, and the Cylinder moves down beside the Press gear, where it is
+              worked out from the gear and the tooth size. Cam 13 Nov 2026. */}
+          {isLabel ? (
+            <Num label="Tooth size" value={spec.cylinderTeeth}
+              hint="The number of teeth on the cylinder gear, for example 93"
+              notSureKey="cylinderTeeth" notSure={notSure} onNotSure={toggleNotSure}
+              onChange={(v) => updateLayout({ cylinderTeeth: v })} />
+          ) : (
+            <Text label="Cylinder" hint="The cylinder this prints on"
+              value={spec.cylinder} onChange={(v) => update({ cylinder: v })}
+              notSureKey="cylinder" notSure={notSure} onNotSure={toggleNotSure} />
+          )}
 
           <Choose label="Print direction" value={spec.printDirection} options={PRINT_DIRECTION_OPTIONS}
             onChange={(v) => update({ printDirection: v })} />
 
-          {/* Gear and teeth are a label thing. On a bag they mean nothing, so
-              they are only asked for, and only required, on a Label. */}
+          {/* Gear, tooth size and the gaps are a label thing. On a bag they
+              mean nothing, so they are only asked for, and only required, on a
+              Label. */}
           {isLabel && (
             <>
               <ChooseValued label="Press gear" value={spec.gearPitch} options={GEAR_PITCH_OPTIONS}
                 notSureKey="gearPitch" notSure={notSure} onNotSure={toggleNotSure}
-                onChange={(v) => update({ gearPitch: v })} />
-              <Num label="Teeth" value={spec.cylinderTeeth} onChange={(v) => update({ cylinderTeeth: v })} />
-              <Num label="Gap across" suffix="mm" value={spec.gapAcrossMm} onChange={(v) => update({ gapAcrossMm: v })} />
-              <Num label="Gap around" suffix="mm" value={spec.gapAroundMm} onChange={(v) => update({ gapAroundMm: v })} />
+                onChange={(v) => updateLayout({ gearPitch: v })} />
+              <LabelCylinder spec={spec} notSure={notSure} onNotSure={toggleNotSure}
+                onChange={(v) => updateLayout({ cylinder: v })} />
+              <Num label="Gap across" suffix="mm" value={spec.gapAcrossMm}
+                hint="0 when 1 across, 3 mm when more"
+                onChange={(v) => update({ gapAcrossMm: v })} />
+              <LabelGapAround spec={spec} onChange={(v) => update({ gapAroundMm: v })} />
             </>
           )}
         </div>
@@ -554,15 +611,110 @@ function Text({ label, hint, value, onChange, type = "text", notSureKey, notSure
   );
 }
 
-function Num({ label, suffix, value, onChange }) {
+function Num({ label, suffix, hint, value, onChange, notSureKey, notSure, onNotSure }) {
+  const off = (notSure || []).includes(notSureKey);
   return (
-    <Field label={suffix ? `${label} (${suffix})` : label}>
+    <Field label={suffix ? `${label} (${suffix})` : label} hint={hint}>
       <input
         type="number"
         value={value ?? ""}
+        disabled={off}
         onChange={(e) => onChange(e.target.value)}
-        className={inputCls}
+        className={inputCls + (off ? " opacity-50" : "")}
       />
+      <NotSureBox notSureKey={notSureKey} notSure={notSure} onNotSure={onNotSure} />
+    </Field>
+  );
+}
+
+// A box the customer cannot type in, because it is worked out from others.
+function Locked({ value, suffix }) {
+  return (
+    <div className="mt-1 flex items-center gap-2">
+      <input
+        type="text"
+        value={value ?? ""}
+        readOnly
+        tabIndex={-1}
+        data-worked-out
+        className="w-full border border-ink/15 rounded-md px-3 py-2 text-sm bg-ink/5 text-ink cursor-default"
+      />
+      {suffix && <span className="text-sm text-ink-muted">{suffix}</span>}
+    </div>
+  );
+}
+
+// Under "Around" on a Label while it is still blank: how many labels fit
+// round the cylinder with a 2 mm gap. Same hint as the job system.
+function aroundHint(spec) {
+  if (String(spec?.around ?? "").trim() !== "") return undefined;
+  const n = maxAround(spec);
+  if (n == null) return undefined;
+  if (n === 0) return <span className="text-red-600">The label is longer than the cylinder.</span>;
+  return `Up to ${n} fit round with a 2 mm gap`;
+}
+
+// The Cylinder box on a Label. Once the press gear and the tooth size are in,
+// it fills itself in and cannot be typed over (93 teeth CP = 295.275 mm).
+// Until then it can be typed, or answered "Not sure". Cam 13 Nov 2026.
+function LabelCylinder({ spec, notSure, onNotSure, onChange }) {
+  const gear = String(spec?.gearPitch || "").toUpperCase();
+  const teeth = parseTeeth(spec?.cylinderTeeth);
+  const fromTeeth = repeatFromTeeth(gear, teeth);
+  const teethTyped = String(spec?.cylinderTeeth ?? "").trim() !== "";
+
+  if (fromTeeth != null) {
+    return (
+      <Field
+        label="Cylinder (mm)"
+        hint={<span className="text-green-700">Worked out: {teeth} teeth x {formatMm(mmPerTooth(gear))} mm</span>}
+      >
+        <Locked value={formatMm(fromTeeth)} />
+      </Field>
+    );
+  }
+
+  let hint = "Fills in by itself once the press gear and tooth size are in";
+  if (teethTyped && teeth == null) {
+    hint = <span className="text-red-600">The tooth size must be a whole number, for example 93.</span>;
+  } else if (teeth != null && !gear) {
+    hint = <span className="text-amber-700">Pick the press gear to work the cylinder out.</span>;
+  }
+  return (
+    <Text label="Cylinder (mm)" hint={hint} value={spec?.cylinder} onChange={onChange}
+      notSureKey="cylinder" notSure={notSure} onNotSure={onNotSure} />
+  );
+}
+
+// The Gap around box on a Label. Once the cylinder, the pitch and the number
+// round are in, it is worked out (cylinder / around - pitch) and cannot be
+// typed over. If the labels do not fit round the cylinder it says so in red.
+// Cam 13 Nov 2026.
+function LabelGapAround({ spec, onChange }) {
+  const chk = gapAroundCheck(spec);
+  if (chk.status === "incomplete") {
+    return (
+      <Num label="Gap around" suffix="mm" value={spec?.gapAroundMm}
+        hint="Fills in by itself once the cylinder, pitch and around are in"
+        onChange={onChange} />
+    );
+  }
+  if (chk.status === "nofit") {
+    return (
+      <Field label="Gap around (mm)" hint={<span className="text-red-600">Does not fit. {chk.message}</span>}>
+        <Locked value="" />
+      </Field>
+    );
+  }
+  const worked = `Worked out: ${formatMm(chk.repeat)} / ${chk.around} - ${formatMm(chk.pitch)}`;
+  return (
+    <Field
+      label="Gap around (mm)"
+      hint={chk.status === "small"
+        ? <span className="text-amber-700">{chk.message}</span>
+        : <span className="text-green-700">{worked}</span>}
+    >
+      <Locked value={formatMm(chk.gap)} />
     </Field>
   );
 }

@@ -74,7 +74,7 @@ test("form: the page no longer shows the four boxes", () => {
   assert.equal(page.includes('label="Plate thickness"'), false);
   assert.equal(page.includes('label="Screen ruling"'), false);
   assert.equal(page.includes('label="Distortion"'), false);
-  assert.ok(page.includes('<Text label="Printer (if you know it)" hint="Who prints it, for example Crown Bag. Leave it blank if you are not sure"'));
+  assert.ok(page.includes('<Text label="Printer (if you know it)" hint="Who prints it, for example Bright Bag Printers. Leave it blank if you are not sure"'));
 });
 
 // ─── the job system is told those boxes wait on us ───────────────────────────
@@ -107,7 +107,8 @@ test("handover: the parked boxes have names for the team", () => {
 test("handover: Submit saves the list on the sheet before asking the job system", () => {
   const route = read("app/api/amber/submit/route.js");
   assert.ok(route.includes("const notSureNow = notSureForMis(submission);"));
-  assert.ok(route.includes("await ref.update({ notSure: notSureNow, updatedAt: new Date() });"));
+  assert.ok(route.includes("const patch = { notSure: notSureNow, updatedAt: new Date() };"));
+  assert.ok(route.includes("await ref.update(patch);"));
   assert.ok(route.indexOf("notSureForMis(submission)") < route.indexOf("await fetch(MIS_JOB_URL"));
 });
 
