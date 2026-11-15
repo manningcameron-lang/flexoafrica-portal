@@ -3,6 +3,7 @@ import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
 import { COL_SUBMISSIONS } from "@/lib/amber-server";
 import { NOT_SURE_ALLOWED, OPTIONAL_FIELDS, REQUIRED_FIELDS, LABEL_ONLY_REQUIRED_FIELDS } from "@/lib/amber-spec.mjs";
 import { NEW_SUBMISSION_KIND } from "@/lib/amber-pricing.mjs";
+import { cleanFlavourFields } from "@/lib/amber-variants.mjs";
 
 /**
  * The customer's AMBER job sheets.
@@ -50,10 +51,12 @@ async function callerOf(request) {
 }
 
 // Keep only the boxes we know about, so nothing unexpected can be smuggled
-// onto a record the MIS trusts.
+// onto a record the MIS trusts. Flavours and trapping go through their own
+// cleaner, which keeps nothing while the switch is off (lib/amber-variants.mjs).
 function cleanSpec(input) {
   const out = {};
   if (!input || typeof input !== "object") return out;
+  Object.assign(out, cleanFlavourFields(input));
   for (const [key, value] of Object.entries(input)) {
     if (!SPEC_KEYS.has(key)) continue;
     if (key === "colours") {
