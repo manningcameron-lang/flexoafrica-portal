@@ -9,6 +9,7 @@ import { getStage, STAGE_CHIP } from "@/lib/stages";
 import StatusTimeline from "@/components/StatusTimeline";
 import ApprovalActions from "@/components/ApprovalActions";
 import JobCommentsThread from "@/components/JobCommentsThread";
+import FileCheckPanel from "@/components/FileCheckPanel";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -120,6 +121,11 @@ export default function JobDetailPage() {
           <ApprovalActions job={job} />
         </div>
       )}
+
+      {/* AMBER's file check on the customer's upload (Cam, 23 Nov 2026).
+          Near the top so it is the first thing seen on a phone. Shows
+          nothing unless this is an AMBER job with a check to show. */}
+      <FileCheckPanel job={job} />
 
       {/* Two column layout */}
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
