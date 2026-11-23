@@ -21,12 +21,20 @@ export default function StaffBanner() {
           sees it, read only. Nothing can be ordered, approved, sent or saved
           from here.
         </span>
-        <a
-          href={JOB_SYSTEM_URL}
-          className="inline-flex items-center rounded-md bg-white px-3 py-1 font-semibold text-ink hover:bg-white/90"
-        >
-          Go to job system
-        </a>
+        <span className="flex flex-wrap gap-2">
+          <a
+            href="/staff/file-checks"
+            className="inline-flex items-center rounded-md border border-white/40 px-3 py-1 font-semibold text-white hover:bg-white/10"
+          >
+            AMBER file checks
+          </a>
+          <a
+            href={JOB_SYSTEM_URL}
+            className="inline-flex items-center rounded-md bg-white px-3 py-1 font-semibold text-ink hover:bg-white/90"
+          >
+            Go to job system
+          </a>
+        </span>
       </div>
     </div>
   );
