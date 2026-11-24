@@ -41,14 +41,16 @@ export default function FileCheckPanel({ job }) {
         if (stop) return;
         setData(d);
         // The instant check: start it once (the server does nothing while it
-        // is switched off), then look again while it is still working.
-        if (!staff && !d.auto && !d.autoRunning && tries === 0 && d.submissionId) {
+        // is switched off); while a slow file is still being checked, ask the
+        // server again every few seconds, which asks the engine. Staff never
+        // start it. Gives up quietly after about 5 minutes.
+        if (staff || !d.submissionId || d.auto || tries >= 60) return;
+        if (tries === 0 || d.autoRunning) {
           tries += 1;
           const s = await startInstantCheck(user, d.submissionId).catch(() => null);
-          if (!stop && (s?.state === "ready" || s?.state === "running")) timer = setTimeout(load, 4000);
-        } else if (d.autoRunning && tries < 60) {
-          tries += 1;
-          timer = setTimeout(load, 5000);
+          if (stop) return;
+          if (s?.state === "ready") timer = setTimeout(load, 0);
+          else if (s?.state === "running") timer = setTimeout(load, Number(s.pollAfterMs) || 4000);
         }
       } catch {
         if (!stop) setData(null); // not an AMBER upload, or nothing to show
@@ -313,6 +315,14 @@ function Finding({ f, auto, choose, locked, pick, onPick, note, onNote, answered
           {f.effect && <p className="mt-1 text-sm text-ink-muted break-words">{f.effect}</p>}
           {f.limitIsDefault && <p className="mt-1 text-xs text-ink-muted">({DEFAULT_LIMIT_LINE})</p>}
           {f.legal && <p className="mt-1 text-xs italic text-ink-muted" data-legal-line>{LEGAL_LINE}</p>}
+          {typeof f.picture === "string" && f.picture.startsWith("data:image/jpeg;base64,") && (
+            <img
+              src={f.picture}
+              alt="Where this is on your file"
+              className="mt-2 w-full max-w-sm rounded-md border border-ink/10"
+              data-finding-picture
+            />
+          )}
 
           {f.options?.length > 0 && (
             <div className="mt-3 space-y-2" role={choose ? "radiogroup" : undefined}>
