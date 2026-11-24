@@ -570,7 +570,7 @@ test("the customer's job page shows the check, and the staff banner links to the
   assert.match(read("app/staff/layout.jsx"), /if \(!mayUseFileCheckScreen\(profile\)\) \{/);
   assert.match(read("app/staff/file-checks/page.jsx"), /const mayRelease = mayReleaseFileCheck\(profile, user\?\.email\);/);
   const panel = read("components/FileCheckPanel.jsx");
-  assert.match(panel, /\{f\.legal && <p className="mt-1 text-xs italic text-ink-muted" data-legal-line>\{LEGAL_LINE\}<\/p>\}/);
+  assert.match(panel, /\{showLegalLine\(f\) && <p className="mt-1 text-xs italic text-ink-muted" data-legal-line>\{LEGAL_LINE\}<\/p>\}/);
   assert.equal(LEGAL_LINE, "Please check with whoever handles your labelling rules.");
   assert.match(panel, /disabled=\{busy \|\| staff\}/, "staff cannot press Submit my answers");
 });

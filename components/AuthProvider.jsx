@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -46,6 +46,27 @@ export function AuthProvider({ children }) {
     );
     return unsub;
   }, [user]);
+
+  // Once per sign-in, for a customer: save our customer list's name on the
+  // account when they typed it differently, so their jobs (found by that name)
+  // show up. Best effort and silent; the profile listener above picks up the
+  // new name by itself. Cam 24 Nov 2026.
+  const companySynced = useRef(null);
+  useEffect(() => {
+    if (!user || !profile) return;
+    if (profile.role !== "customer" || profile.status !== "active") return;
+    if (companySynced.current === user.uid) return;
+    companySynced.current = user.uid;
+    user
+      .getIdToken()
+      .then((token) =>
+        fetch("/api/account/company-sync", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      )
+      .catch(() => {});
+  }, [user, profile]);
 
   return (
     <AuthContext.Provider value={{ user, profile, loading }}>
