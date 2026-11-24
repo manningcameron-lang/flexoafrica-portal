@@ -32,6 +32,7 @@ export default function DashboardPage() {
         setLoading(false);
         return;
       }
+      setError(null); // a later good answer clears an earlier hiccup
       setJobs(items || []);
       setLoading(false);
     });

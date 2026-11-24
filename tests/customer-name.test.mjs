@@ -128,12 +128,11 @@ test("jobs with no date go last and nothing is lost", () => {
   assert.equal(sortJobsNewestFirst(jobs).length, 4);
 });
 
-test("the job list no longer sorts in the database", () => {
+test("the job list no longer sorts in the database (it reads through the door, sorted in the browser)", () => {
   const src = read("lib/jobs.js");
   assert.doesNotMatch(src, /orderBy\(/, "an orderBy drops every job without createdAt");
-  assert.match(src, /const q = query\(collection\(db, JOBS\), where\("customer", "==", company\)\);\n\s+return onSnapshot\(/);
-  assert.match(src, /const items = sortJobsNewestFirst\(snap\.docs\.map\(\(d\) => \(\{ id: d\.id, \.\.\.d\.data\(\) \}\)\)\);/);
-  assert.match(src, /return sortJobsNewestFirst\(snap\.docs\.map\(\(d\) => \(\{ id: d\.id, \.\.\.d\.data\(\) \}\)\)\)\.slice\(0, max\);/);
+  assert.match(src, /else callback\(listFromDoor\(answer\), null\);/);
+  assert.match(src, /return listFromDoor\(answer\)\.slice\(0, max\);/);
 });
 
 // ─── 3. job messages ────────────────────────────────────────────────────────
