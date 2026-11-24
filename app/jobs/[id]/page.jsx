@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { subscribeJob, formatDate, formatDateTime } from "@/lib/jobs";
@@ -10,24 +10,35 @@ import StatusTimeline from "@/components/StatusTimeline";
 import ApprovalActions from "@/components/ApprovalActions";
 import JobCommentsThread from "@/components/JobCommentsThread";
 import FileCheckPanel from "@/components/FileCheckPanel";
+import { isStaff } from "@/lib/staff-view.mjs";
 
 export default function JobDetailPage() {
   const params = useParams();
   const jobId = params.id;
-  const { user } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
+  // Staff (read-only view) read the job record directly; customers through
+  // the job system's safe-list door (lib/jobs.js). Wait for the sign-in and
+  // profile so the right one is used from the first ask.
+  const staff = isStaff(profile);
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const shown = useRef(false);
+
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId || authLoading || !user) return;
     setLoading(true);
     const unsub = subscribeJob(jobId, (j, err) => {
       if (err) {
-        setError(err.message || "Failed to load job");
+        // A failed re-check while the job is already on screen keeps the job
+        // shown; the next check (30 s) tries again.
+        if (!shown.current) setError(err.message || "Failed to load job");
         setLoading(false);
         return;
       }
+      shown.current = !!j;
+      setError(null);
       // Belt-and-braces: even though Firestore rules scope this, double-check.
       if (j && user?.uid && j.customerUid && j.customerUid !== user.uid) {
         setError("This job belongs to another account.");
@@ -36,9 +47,9 @@ export default function JobDetailPage() {
         setJob(j);
       }
       setLoading(false);
-    });
+    }, { staff });
     return unsub;
-  }, [jobId, user?.uid]);
+  }, [jobId, user?.uid, authLoading, staff]);
 
   if (loading) {
     return (

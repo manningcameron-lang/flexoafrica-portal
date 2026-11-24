@@ -48,6 +48,7 @@ export default function MyJobsPage() {
         setLoading(false);
         return;
       }
+      setError(null); // a later good answer clears an earlier hiccup
       setJobs(items || []);
       setLoading(false);
     });

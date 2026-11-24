@@ -3,16 +3,12 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  where,
-} from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/AuthProvider";
 import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
+import { askDoor, onTabBack } from "@/lib/jobs";
+import { orderJobsFromDoor, orderPollMs, startPolling } from "@/lib/job-door.mjs";
 
 // Next.js 14 requires useSearchParams to be inside a Suspense boundary.
 export default function OrderSuccessPage() {
@@ -62,30 +58,35 @@ function OrderSuccessPageInner() {
     return unsub;
   }, [orderId, user, loading]);
 
-  // LIVE listener on the jobs in this order so the analysis status + preview
-  // thumbnail update as the Cloud Function writes back.
+  // The jobs in this order, through the job system's safe-list door (Cam,
+  // 24 Nov 2026): asked again every 10 s while a file is still being
+  // analysed, else every 30 s, and when the tab comes back into view, so the
+  // analysis status and preview update as the analyser writes back. Only the
+  // person who placed the order gets its jobs; staff (read only) get none,
+  // as before.
+  const staffView = isStaff(profile);
   useEffect(() => {
     if (loading || !orderId || !user) return;
-    const q = query(
-      collection(db, "jobs"),
-      where("orderId", "==", orderId),
-      where("customerUid", "==", user.uid)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const arr = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (a.jobNumberInt || 0) - (b.jobNumberInt || 0));
-        setJobs(arr);
+    if (staffView) {
+      setJobs([]);
+      return;
+    }
+    let shownJobs = false;
+    const stop = startPolling({
+      load: () => askDoor({ orderId }),
+      deliver: (answer) => {
+        if (answer?.error || answer?.notFound) {
+          if (!shownJobs) setLoadErr(answer.error || "Could not load jobs.");
+          return;
+        }
+        shownJobs = true;
+        setJobs(orderJobsFromDoor(answer));
       },
-      (err) => {
-        console.error("jobs listen error", err);
-        setLoadErr(err?.message || "Could not load jobs.");
-      }
-    );
-    return unsub;
-  }, [orderId, user, loading]);
+      nextMs: (answer) => orderPollMs(answer?.jobs),
+      onWake: onTabBack,
+    });
+    return stop;
+  }, [orderId, user, loading, staffView]);
 
   async function handlePayNow() {
     if (!order || paying) return;
