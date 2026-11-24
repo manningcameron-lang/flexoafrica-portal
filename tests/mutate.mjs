@@ -643,6 +643,48 @@ const MUTATIONS = [
 
   // ─── staff read only view (Cam 2026-10-26) ────────────────────────────────
   {
+    label: "staff are told a customer's job belongs to another account",
+    file: "lib/staff-view.mjs",
+    find: "  if (!job || staff === true) return false;",
+    replace: "  if (!job) return false;",
+  },
+  {
+    label: "any truthy staff flag counts as staff",
+    file: "lib/staff-view.mjs",
+    find: "  if (!job || staff === true) return false;",
+    replace: "  if (!job || staff) return false;",
+  },
+  {
+    label: "a customer can open another customer's job",
+    file: "lib/staff-view.mjs",
+    find: "  return !!job.customerUid && job.customerUid !== uid;",
+    replace: "  return false;",
+  },
+  {
+    label: "a job with no owner is refused to a customer",
+    file: "lib/staff-view.mjs",
+    find: "  return !!job.customerUid && job.customerUid !== uid;",
+    replace: "  return job.customerUid !== uid;",
+  },
+  {
+    label: "a missing job counts as someone else's",
+    file: "lib/staff-view.mjs",
+    find: "  if (!job || staff === true) return false;",
+    replace: "  if (staff === true) return false;\n  if (!job) return true;",
+  },
+  {
+    label: "the job page goes back to its own check that refuses staff",
+    file: "app/jobs/[id]/page.jsx",
+    find: "      if (jobIsSomeoneElses(j, user?.uid, staff)) {",
+    replace: "      if (j && user?.uid && j.customerUid && j.customerUid !== user.uid) {",
+  },
+  {
+    label: "the job page forgets to pass the staff flag",
+    file: "app/jobs/[id]/page.jsx",
+    find: "      if (jobIsSomeoneElses(j, user?.uid, staff)) {",
+    replace: "      if (jobIsSomeoneElses(j, user?.uid)) {",
+  },
+  {
     label: "designers stop counting as staff",
     file: "lib/staff-view.mjs",
     find: 'Object.freeze(["admin", "operator", "designer"])',
