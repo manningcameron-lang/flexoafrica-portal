@@ -261,3 +261,70 @@ test("staff never start or poll it, and the page stops asking after about 5 minu
   assert.match(panel, /if \(staff \|\| !d\.submissionId \|\| d\.auto \|\| tries >= 60\) return;/);
   assert.match(panel, /if \(tries === 0 \|\| d\.autoRunning\) \{/);
 });
+
+// ─── Cylinder repeat and Esko LEN files (Cam, 24 Nov 2026 evening, "1/2/3") ───
+import { MAX_REPEAT_MM, MIN_REPEAT_MM, repeatMmFor } from "../lib/upload-check-engine.mjs";
+
+test("a label's repeat comes from the gear and the tooth size, like the job system", () => {
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93", cylinder: "295.275" }), 295.275);
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "DP", cylinderTeeth: 112 }), 279.288);
+  // The gear sum wins over a different figure typed in the cylinder box.
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93", cylinder: "300" }), 295.275);
+  // No gear: the cylinder box, if it is a plain figure.
+  assert.equal(repeatMmFor({ bagType: "Label", cylinderTeeth: "93", cylinder: "381" }), 381);
+  // Teeth ticked Not sure: the cylinder box only.
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93", cylinder: "300" }, ["cylinderTeeth"]), 300);
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93", cylinder: "300" }, ["gearPitch"]), 300);
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93" }, ["cylinderTeeth"]), null);
+});
+
+test("a bag's repeat is the cylinder box only when it is a plain millimetre figure", () => {
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: "440" }), 440);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: " 440 mm " }), 440);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: "440MM" }), 440);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: "295,275" }), 295.275);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: "635.1234" }), 635.123);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: 600 }), 600);
+  for (const bad of ["96T", "112t (279.30)", "see last job", "", "440 x 2", "-440", "4 40"]) {
+    assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: bad }), null, bad);
+  }
+  // Gear and teeth left over on a bag are never used.
+  assert.equal(repeatMmFor({ bagType: "SO Bag", gearPitch: "CP", cylinderTeeth: "93" }), null);
+  assert.equal(repeatMmFor({ bagType: "SO Bag", cylinder: "440" }, ["cylinder"]), null);
+  assert.equal(repeatMmFor({ bagType: "Label", gearPitch: "CP", cylinderTeeth: "93" }, ["cylinder"]), null);
+  assert.equal(repeatMmFor(null), null);
+  assert.equal(repeatMmFor({ cylinder: "440" }, "cylinder"), 440);
+});
+
+test("only real cylinder sizes are sent, 50 to 2000 mm", () => {
+  assert.equal(MIN_REPEAT_MM, 50);
+  assert.equal(MAX_REPEAT_MM, 2000);
+  assert.equal(repeatMmFor({ cylinder: "50" }), 50);
+  assert.equal(repeatMmFor({ cylinder: "49.9" }), null);
+  assert.equal(repeatMmFor({ cylinder: "2000" }), 2000);
+  assert.equal(repeatMmFor({ cylinder: "2000.1" }), null);
+  assert.equal(repeatMmFor({ cylinder: Number.NaN }), null);
+});
+
+test("the start call adds repeatMm to the spec when known, and changes nothing else", () => {
+  const spec = { bagType: "Label", gearPitch: "CP", cylinderTeeth: "93", cylinder: "295.275", widthMm: "100" };
+  const call = buildStartCall({ submissionId: "s1", fileUrl: "https://storage.googleapis.com/b/a.pdf", fileName: "a.pdf", spec, notSure: [], key: KEY, nowSeconds: NOW });
+  const parsed = JSON.parse(call.body);
+  assert.deepEqual(parsed.spec, { ...spec, repeatMm: 295.275 });
+  assert.equal("repeatMm" in spec, false, "the stored spec is not changed");
+  assert.equal(verifies(`s1.${sha256Hex(Buffer.from(call.body, "utf8"))}`, call.headers), true);
+  const unsure = JSON.parse(buildStartCall({ submissionId: "s1", fileUrl: "https://x", spec: { cylinder: "440" }, notSure: ["cylinder"], key: KEY }).body);
+  assert.deepEqual(unsure.spec, { cylinder: "440" });
+});
+
+test("Esko LEN plate files can be uploaded and are sent to the instant check", () => {
+  // The upload list (lib/amber-client.js loads Firebase, so it is read as text).
+  const client = read("lib/amber-client.js");
+  const list = client.match(/export const ACCEPTED_EXTENSIONS = \[([\s\S]*?)\];/)[1];
+  const exts = [...list.replace(/\/\/.*$/gm, "").matchAll(/"(\.[a-z0-9]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(exts, [".pdf", ".ai", ".eps", ".psd", ".tif", ".tiff", ".zip", ".otf", ".ttf", ".woff", ".woff2", ".len", ".lenx"]);
+  assert.match(client, /return ACCEPTED_EXTENSIONS\.some\(\(ext\) => lower\.endsWith\(ext\)\);/);
+  assert.equal(pickCheckableFile([{ name: "font.otf" }, { name: "Cyan.LEN" }]).name, "Cyan.LEN");
+  assert.equal(pickCheckableFile([{ name: "all.lenx" }]).name, "all.lenx");
+  assert.match(read("app/amber/page.jsx"), /PDF, AI, EPS, PSD, TIFF, ZIP, Esko LEN and fonts\./);
+});
