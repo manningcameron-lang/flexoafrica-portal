@@ -229,7 +229,7 @@ test("saving: flavours are cleaned (names, 10 inks, 10 flavours, no rubbish)", (
   eq(got[0].colours.length, 10);
   eq(got[0].colours.slice(0, 2), ["Black", "PANTONE 469 U"]);
   eq(got[0].barcode, "6001");
-  eq(got[1].name.length, 80);
+  eq(got[1].name.length, 60);
   eq(got[1].colours, []);
   ok(got[1].id.startsWith("v"));
   eq(cleanFlavours(Array.from({ length: 15 }, (_, i) => ({ name: `F${i}` }))).length, 10);
@@ -251,8 +251,11 @@ test("saving: the job sheet route sends every spec through the flavour cleaner",
   ok(route.includes("  Object.assign(out, cleanFlavourFields(input));"));
 });
 
-test("switch: OFF until the job system reads flavours and trapping", () => {
-  eq(FLAVOURS_AND_TRAPPING_LIVE, false);
+test("switch: ON since the job system reads flavours and trapping (MIS PR #96, 24 Nov 2026)", () => {
+  eq(FLAVOURS_AND_TRAPPING_LIVE, true);
+  // Live, the server keeps both fields as the job system reads them.
+  eq(cleanFlavourFields({ variants: three().variants, trappingMm: "0.2" }).trappingMm, "0.2");
+  eq(cleanFlavourFields({ variants: three().variants }).variants.length, 3);
   const page = read("app/amber/page.jsx");
   ok(page.includes('          {FLAVOURS_AND_TRAPPING_LIVE && (\n            <Text label="Trapping in mm (optional)"'));
   ok(page.includes("            {FLAVOURS_AND_TRAPPING_LIVE && (\n              <button"));
