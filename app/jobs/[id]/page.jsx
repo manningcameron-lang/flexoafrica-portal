@@ -11,6 +11,7 @@ import ApprovalActions from "@/components/ApprovalActions";
 import JobCommentsThread from "@/components/JobCommentsThread";
 import FileCheckPanel from "@/components/FileCheckPanel";
 import { isStaff, jobIsSomeoneElses } from "@/lib/staff-view.mjs";
+import { flavourList, inksLine } from "@/lib/job-flavours.mjs";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -174,6 +175,22 @@ export default function JobDetailPage() {
               <DetailRow label="Due date" value={formatDate(job.dueDate)} />
             </DetailGrid>
           </DetailCard>
+
+          {/* Flavours: one artwork, each flavour with its own inks and
+              barcode (Cam, 24 Nov 2026). Shows only on a job with 2 or more. */}
+          {flavourList(job.variants).length > 0 && (
+            <DetailCard title="Flavours">
+              <ul className="divide-y divide-ink/10" data-flavours>
+                {flavourList(job.variants).map((v, i) => (
+                  <li key={i} className="py-2 first:pt-0 last:pb-0">
+                    <div className="text-sm font-semibold text-ink">{v.name}</div>
+                    <div className="text-sm text-ink-muted">Inks: {inksLine(v)}</div>
+                    {v.barcode && <div className="text-sm text-ink-muted">Barcode: {v.barcode}</div>}
+                  </li>
+                ))}
+              </ul>
+            </DetailCard>
+          )}
 
           {/* Files */}
           <DetailCard title="Files">

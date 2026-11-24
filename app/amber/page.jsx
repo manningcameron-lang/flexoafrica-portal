@@ -4,7 +4,14 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
-import { PACK_QUESTIONS } from "@/lib/pack-questions.mjs";
+import {
+  LAMINATE_QUESTION,
+  LAYERS_HINT,
+  LAYERS_KEY,
+  LAYERS_LABEL,
+  PACK_QUESTIONS,
+  isFilm,
+} from "@/lib/pack-questions.mjs";
 import {
   ACCEPTED_EXTENSIONS,
   createSubmission,
@@ -564,6 +571,21 @@ function AmberPageInner() {
               value={spec[q.key]} options={q.options}
               onChange={(v) => update({ [q.key]: v })} />
           ))}
+          {/* Film jobs only: laminated, and the layers outside first.
+              AMBER's reverse-print checks need it (Cam, 24 Nov 2026). */}
+          {isFilm(spec.material) && (
+            <div data-laminate-question>
+              <ChooseValued label={`${LAMINATE_QUESTION.label} (optional)`}
+                value={spec[LAMINATE_QUESTION.key]} options={LAMINATE_QUESTION.options}
+                onChange={(v) => update({ [LAMINATE_QUESTION.key]: v })} />
+            </div>
+          )}
+          {isFilm(spec.material) && spec[LAMINATE_QUESTION.key] === "yes" && (
+            <div data-laminate-layers>
+              <Text label={LAYERS_LABEL} hint={LAYERS_HINT}
+                value={spec[LAYERS_KEY]} onChange={(v) => update({ [LAYERS_KEY]: v })} />
+            </div>
+          )}
         </div>
 
         <div className="mt-4">

@@ -769,3 +769,49 @@ test("AMBER's honest food and recycling wording is allowed", () => {
     assert.equal(r.ok, true, `should allow: ${text} ${JSON.stringify(r.problems)}`);
   }
 });
+
+// ─── No promise that the print will pass inspection (Cam, 24 Nov 2026 evening) ───
+test("a report that promises the print will pass inspection or be defect free is refused", () => {
+  const bad = [
+    "This job will pass inspection.",
+    "It will pass print inspection.",
+    "The roll will pass the printer's inspection.",
+    "The roll will pass the printer’s camera inspection.",
+    "Will  pass  inspection on press.",
+    "It will\npass\ninspection.",
+    "The print will be defect free.",
+    "A defect-free run.",
+    "Defectfree labels.",
+    "DEFECT FREE",
+    "This is guaranteed to pass.",
+  ];
+  for (const text of bad) {
+    const s = foodReport();
+    s.findings[1].effect = text;
+    const r = checkReport(s);
+    assert.equal(r.ok, false, `should refuse: ${text}`);
+    assert.match(r.problems.join(" "), /inspection belongs to the printer/);
+  }
+  const s1 = foodReport(); s1.findings[0].options[1].text = "Keep it, it will pass inspection";
+  assert.equal(checkReport(s1).ok, false);
+  const s2 = foodReport(); s2.tidyList = ["Made the file defect free"];
+  assert.equal(checkReport(s2).ok, false);
+});
+
+test("honest inspection wording is still allowed", () => {
+  const ok = [
+    "This may not pass inspection on a camera line.",
+    "It will not pass inspection if the barcode is this small.",
+    "Please ask your printer how their inspection camera checks this.",
+    "The press camera cannot judge this area.",
+    "Passing inspection is up to the printer.",
+    "Fewer defects on press with a wider trap.",
+    "This will pass through the press faster.",
+  ];
+  for (const text of ok) {
+    const s = foodReport();
+    s.findings[1].effect = text;
+    const r = checkReport(s);
+    assert.equal(r.ok, true, `should allow: ${text} ${JSON.stringify(r.problems)}`);
+  }
+});
