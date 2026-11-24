@@ -31,8 +31,13 @@ import {
   buildReleaseEmail,
   checkReport,
   customerView,
+  FOOD_FIX_FAULT,
+  FOOD_STAGE_NAME,
   editReport,
+  faultNumber,
   firstName,
+  foodLevel,
+  isFoodFinding,
   holdsJob,
   isLegalFinding,
   mayReadSubmission,
@@ -578,4 +583,189 @@ test("the customer's job page shows the check, and the staff banner links to the
 test("Order Plates uploads are not checked in this slice", () => {
   assert.match(read("app/api/staff/file-checks/route.js"), /if \(\(submission\.kind \|\| "repro"\) !== "repro"\) \{\n\s+return NextResponse\.json\(\{ error: "The file check is only for AMBER artwork jobs\." \}/);
   assert.match(read("app/api/staff/file-checks/route.js"), /\.filter\(\(s\) => \(s\.kind \|\| "repro"\) === "repro"/);
+});
+
+// ─── faults 87 to 110, food contact and recycling (Cam, 24 Nov 2026) ────────
+// AMBER's issue spotter grew to 110 numbered faults with new stages "8 White,
+// varnish, special layers" and "10A Food contact and recycling". The gate
+// must never refuse a whole report for a new number or stage name; food
+// findings are NOTEs except fault 91; no report promises food safety or
+// recyclability.
+
+const foodOpts = [
+  { key: "A", text: "Move the print to the outside", recommended: true },
+  { key: "B", text: "Keep it; the printer confirms an ink made for direct food contact" },
+];
+
+function foodReport() {
+  return sample({
+    findings: [
+      { stage: "10A Food contact and recycling", fault: 91, level: "FIX",
+        what: "This print is on the side the food touches.",
+        effect: "That needs inks made and tested for direct food contact.", options: foodOpts },
+      { stage: "10A Food contact and recycling", fault: 94, level: "FIX",
+        what: "Metallic inks are flagged by recyclers.",
+        effect: "A gold effect can be made from your normal inks.", options: foodOpts },
+      { stage: "8 White, varnish, special layers", fault: 103, level: "FIX",
+        what: "The spot varnish has text smaller than it can hold.", effect: "Fine varnish lines fill in.", options: opts3 },
+      { stage: "8 White, varnish, special layers", fault: 105, level: "FIX",
+        what: "The Braille dots are not to the Marburg Medium size.", effect: "They may not read.", options: opts3 },
+      { stage: "8 White, varnish, special layers", fault: 110, level: "NOTE",
+        what: "Soft touch on the printed side of a laminate.", effect: "It sits inside the pouch.", options: [] },
+    ],
+  });
+}
+
+test("fault numbers 87 to 110 and the new stage names are all accepted, and the number is kept", () => {
+  const r = checkReport(foodReport());
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+  const byFault = Object.fromEntries(r.report.findings.map((f) => [f.fault, f]));
+  assert.deepEqual(Object.keys(byFault).map(Number).sort((a, b) => a - b), [91, 94, 103, 105, 110]);
+  assert.equal(byFault[103].level, "FIX");
+  assert.equal(byFault[105].level, "FIX");
+  assert.equal(byFault[103].stage, "8 White, varnish, special layers");
+  // No upper limit on what is ACCEPTED: fault 106 to 999 and any stage name pass.
+  const s = foodReport();
+  s.findings[2].fault = 106;
+  s.findings[2].stage = "12 A stage that does not exist yet";
+  const r2 = checkReport(s);
+  assert.equal(r2.ok, true, JSON.stringify(r2.problems));
+  assert.equal(r2.report.findings.find((f) => f.what.startsWith("The spot varnish")).fault, 106);
+});
+
+test("a fault number that is not a whole number from 1 to 999 is dropped, never refused", () => {
+  assert.equal(faultNumber(91), 91);
+  assert.equal(faultNumber("91"), 91);
+  assert.equal(faultNumber(" 7 "), 7);
+  assert.equal(faultNumber(999), 999);
+  for (const bad of [0, -3, 1000, 9.5, "", "91a", "0x10", "1e2", true, null, undefined, {}, [91]]) {
+    assert.equal(faultNumber(bad), null, `refused ${JSON.stringify(bad)}`);
+  }
+  const s = sample();
+  s.findings[0].fault = "abc";
+  const r = checkReport(s);
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+  assert.equal(r.report.findings.find((f) => f.level === "FIX").fault, null);
+});
+
+test("a food finding is told by its stage 10A or by food: true", () => {
+  assert.equal(isFoodFinding({ stage: "10A Food contact and recycling" }), true);
+  assert.equal(isFoodFinding({ stage: "10a food contact" }), true);
+  assert.equal(isFoodFinding({ stage: "Food contact and recycling" }), true);
+  assert.equal(isFoodFinding({ food: true }), true);
+  assert.equal(isFoodFinding({ food: "yes", stage: "5 Type and lines" }), false);
+  assert.equal(isFoodFinding({ stage: "10 Legal copy" }), false);
+  assert.equal(isFoodFinding({ stage: "1 Can the file be used" }), false);
+  assert.equal(isFoodFinding(null), false);
+  assert.equal(FOOD_STAGE_NAME, "Food contact and recycling");
+  assert.equal(FOOD_FIX_FAULT, 91);
+});
+
+test("every food finding is saved as a NOTE except fault 91, which may be a FIX but never a STOP", () => {
+  const r = checkReport(foodReport());
+  const byFault = Object.fromEntries(r.report.findings.map((f) => [f.fault, f]));
+  assert.equal(byFault[91].level, "FIX");
+  assert.equal(byFault[91].food, true);
+  assert.equal(byFault[94].level, "NOTE", "fault 94 sent as FIX is kept as a NOTE");
+  assert.equal(byFault[94].food, true);
+  assert.equal(byFault[103].food, false);
+  const s = foodReport();
+  s.findings[0].level = "STOP";
+  s.findings[1].level = "STOP";
+  const r2 = checkReport(s);
+  const by2 = Object.fromEntries(r2.report.findings.map((f) => [f.fault, f]));
+  assert.equal(by2[91].level, "FIX", "fault 91 as STOP is kept as a FIX");
+  assert.equal(by2[94].level, "NOTE");
+  s.findings[0].level = "NOTE";
+  assert.equal(checkReport(s).report.findings.find((f) => f.fault === 91).level, "NOTE", "AMBER's NOTE stays a NOTE");
+  assert.equal(foodLevel({ fault: 91 }, "FIX"), "FIX");
+  assert.equal(foodLevel({ fault: "91" }, "STOP"), "FIX");
+  assert.equal(foodLevel({ fault: 92 }, "FIX"), "NOTE");
+  assert.equal(foodLevel({}, "STOP"), "NOTE");
+});
+
+test("a sent food report never holds the job; only a STOP does, as before", () => {
+  const s = foodReport();
+  s.findings.filter((f) => /10A/.test(f.stage)).forEach((f) => { f.level = "STOP"; });
+  const r = checkReport(s);
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+  const food = r.report.findings.filter((f) => f.food);
+  assert.equal(food.some((f) => f.level === "STOP"), false);
+  const onlyFood = { ...r.report, findings: food, status: STATUS_SENT };
+  assert.equal(holdsJob(onlyFood), false);
+});
+
+test("Cam's edit cannot turn a food note into a STOP or FIX", () => {
+  const saved0 = { ...checkReport(foodReport()).report, status: STATUS_REVIEW };
+  const edited = JSON.parse(JSON.stringify(saved0));
+  edited.findings.find((f) => f.fault === 94).level = "STOP";
+  const r = editReport(saved0, edited);
+  assert.equal(r.ok, true, JSON.stringify(r.problems));
+  assert.equal(r.report.findings.find((f) => f.fault === 94).level, "NOTE");
+  assert.equal(r.report.findings.find((f) => f.fault === 91).fault, 91, "the fault number survives an edit");
+});
+
+test("the customer view keeps food findings capped and tells the page which are food", () => {
+  const r = checkReport(foodReport()).report;
+  // A record changed behind the gate's back is still capped when shown.
+  const tampered = { ...r, status: STATUS_SENT, findings: r.findings.map((f) => (f.fault === 94 ? { ...f, level: "STOP" } : f)) };
+  const v = customerView(tampered);
+  const f94 = v.findings.find((f) => f.what.startsWith("Metallic"));
+  assert.equal(f94.level, "NOTE");
+  assert.equal(f94.food, true);
+  const f91 = v.findings.find((f) => f.what.startsWith("This print"));
+  assert.equal(f91.level, "FIX");
+  assert.equal(v.findings.find((f) => f.what.startsWith("The Braille")).food, false);
+});
+
+test("the customer page shows the heading Food contact and recycling on a food finding", () => {
+  const panel = read("components/FileCheckPanel.jsx");
+  assert.match(panel, /\{f\.food === true && \(/);
+  assert.match(panel, /data-food-heading>\{FOOD_STAGE_NAME\}</);
+});
+
+test("a report that promises food safety or recyclability is refused", () => {
+  const bad = [
+    "This pack is food safe.",
+    "Use a food-safe ink.",
+    "The film is foodsafe",
+    "Food grade inks are used.",
+    "It is food-grade.",
+    "The pouch is certified recyclable.",
+    "Certified-recyclable film.",
+    "This bag is 100% recyclable.",
+    "This bag is 100 % recyclable.",
+    "This bag is 100 per cent recyclable.",
+    "This bag is 100 percent recyclable.",
+  ];
+  for (const text of bad) {
+    const s = foodReport();
+    s.findings[1].effect = text;
+    const r = checkReport(s);
+    assert.equal(r.ok, false, `should refuse: ${text}`);
+    assert.match(r.problems.join(" "), /AMBER never certifies that/);
+  }
+  // Also in an option, a tidy line and a not checked line.
+  const s1 = foodReport(); s1.findings[0].options[1].text = "Keep it, the ink is food safe";
+  assert.equal(checkReport(s1).ok, false);
+  const s2 = foodReport(); s2.tidyList = ["Marked the pack 100% recyclable"];
+  assert.equal(checkReport(s2).ok, false);
+  const s3 = foodReport(); s3.notChecked = ["Whether it is food grade"];
+  assert.equal(checkReport(s3).ok, false);
+});
+
+test("AMBER's honest food and recycling wording is allowed", () => {
+  const ok = [
+    "This needs inks made for food contact.",
+    "Recyclers may flag this.",
+    "Please check the printer runs a food-contact ink range.",
+    "The brand owner confirms its recycling claim.",
+    "Food packaging, recyclable film: please check with your printer.",
+  ];
+  for (const text of ok) {
+    const s = foodReport();
+    s.findings[1].effect = text;
+    const r = checkReport(s);
+    assert.equal(r.ok, true, `should allow: ${text} ${JSON.stringify(r.problems)}`);
+  }
 });
