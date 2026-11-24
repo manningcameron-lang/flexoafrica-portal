@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
+import { PACK_QUESTIONS } from "@/lib/pack-questions.mjs";
 import {
   ACCEPTED_EXTENSIONS,
   createSubmission,
@@ -554,6 +555,17 @@ function AmberPageInner() {
             value={spec.poNumber} onChange={(v) => update({ poNumber: v })} />
         </div>
 
+        {/* About the pack (Cam, 24 Nov 2026): optional, "Not sure" is an
+            answer. AMBER's food contact, recycling and colour checks start
+            from these (lib/pack-questions.mjs). */}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-pack-questions>
+          {PACK_QUESTIONS.map((q) => (
+            <ChooseValued key={q.key} label={`${q.label} (optional)`} hint={q.hint}
+              value={spec[q.key]} options={q.options}
+              onChange={(v) => update({ [q.key]: v })} />
+          ))}
+        </div>
+
         <div className="mt-4">
           <label className="block text-sm font-medium text-ink">Anything else we should know</label>
           <textarea
@@ -793,10 +805,10 @@ function Choose({ label, value, options, onChange, notSureKey, notSure, onNotSur
 
 // Same as Choose, but the stored value and the words shown differ (the MIS
 // stores "CP" but shows the tooth pitch beside it).
-function ChooseValued({ label, value, options, onChange, notSureKey, notSure, onNotSure }) {
+function ChooseValued({ label, hint, value, options, onChange, notSureKey, notSure, onNotSure }) {
   const off = (notSure || []).includes(notSureKey);
   return (
-    <Field label={label}>
+    <Field label={label} hint={hint || undefined}>
       <select
         value={value || ""}
         disabled={off}

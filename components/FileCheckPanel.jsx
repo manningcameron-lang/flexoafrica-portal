@@ -21,6 +21,7 @@ import {
   needsAnswer,
   readyToSubmit,
   splitForShow,
+  FOOD_STAGE_NAME,
 } from "@/lib/file-check.mjs";
 import { loadFileCheck, startInstantCheck, submitAnswers } from "@/lib/file-check-client";
 
@@ -312,6 +313,9 @@ function Finding({ f, auto, choose, locked, pick, onPick, note, onNote, answered
         <span className="font-bold text-ink">{f.id}.</span>
         <div className="min-w-0 flex-1">
           <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-bold ${badge}`}>{f.level}</span>
+          {f.food === true && (
+            <span className="ml-2 text-[11px] font-semibold text-ink-muted" data-food-heading>{FOOD_STAGE_NAME}</span>
+          )}
           <p className="mt-1 text-sm font-medium text-ink break-words">{f.what}</p>
           {f.effect && <p className="mt-1 text-sm text-ink-muted break-words">{f.effect}</p>}
           {f.limitIsDefault && <p className="mt-1 text-xs text-ink-muted">({DEFAULT_LIMIT_LINE})</p>}

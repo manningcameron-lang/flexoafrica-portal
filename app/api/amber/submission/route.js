@@ -4,6 +4,7 @@ import { COL_SUBMISSIONS } from "@/lib/amber-server";
 import { NOT_SURE_ALLOWED, OPTIONAL_FIELDS, REQUIRED_FIELDS, LABEL_ONLY_REQUIRED_FIELDS } from "@/lib/amber-spec.mjs";
 import { NEW_SUBMISSION_KIND } from "@/lib/amber-pricing.mjs";
 import { cleanFlavourFields } from "@/lib/amber-variants.mjs";
+import { cleanPackAnswers } from "@/lib/pack-questions.mjs";
 
 /**
  * The customer's AMBER job sheets.
@@ -57,6 +58,8 @@ function cleanSpec(input) {
   const out = {};
   if (!input || typeof input !== "object") return out;
   Object.assign(out, cleanFlavourFields(input));
+  // Food contact, recycling claim and colour approval: listed answers only.
+  Object.assign(out, cleanPackAnswers(input));
   for (const [key, value] of Object.entries(input)) {
     if (!SPEC_KEYS.has(key)) continue;
     if (key === "colours") {
