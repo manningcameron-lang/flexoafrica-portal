@@ -76,7 +76,7 @@ test("the staff screen lines are in the form's order, answered ones only", () =>
 
 test("the server keeps the answers through the one cleaner", () => {
   const route = read("app/api/amber/submission/route.js");
-  assert.match(route, /import \{ cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
+  assert.match(route, /import \{ cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
   assert.match(route, /Object\.assign\(out, cleanPackAnswers\(input\)\);/);
 });
 
@@ -92,4 +92,111 @@ test("the staff file-check screen shows the answers in plain words, not as raw n
   const page = read("app/staff/file-checks/page.jsx");
   assert.match(page, /packAnswerLines\(spec\)\.map\(\(line\) => <li key=\{line\}>\{line\}<\/li>\)/);
   assert.match(page, /!PACK_KEYS\.includes\(k\)/);
+});
+
+// ─── Laminate, film jobs only (Cam, 24 Nov 2026 evening) ───
+import {
+  FILM_MATERIALS,
+  LAMINATE_KEYS,
+  LAMINATE_QUESTION,
+  LAYERS_HINT,
+  LAYERS_KEY,
+  LAYERS_LABEL,
+  MAX_LAYERS,
+  cleanLaminate,
+  isFilm,
+} from "../lib/pack-questions.mjs";
+import { MATERIAL_OPTIONS } from "../lib/amber-spec.mjs";
+
+test("the laminate question is asked on films only, named as the form names them", () => {
+  assert.deepEqual([...FILM_MATERIALS], [
+    "PET", "PVC", "Clear BOPP", "White BOPP", "Clear LDPE", "White LDPE",
+    "Polywoven Laminate", "Polypropylene", "Polyethylene", "Aluminum Foil",
+  ]);
+  for (const m of FILM_MATERIALS) assert.ok(MATERIAL_OPTIONS.includes(m), `${m} is on the form's list`);
+  for (const m of ["White Paper", "Brown Paper", "Grease Proof Paper", "Polywoven", "Cardboard", "Label Stock"]) {
+    assert.equal(isFilm(m), false, m);
+  }
+  assert.equal(isFilm("Clear BOPP"), true);
+  assert.equal(isFilm("clear bopp"), false);
+  assert.equal(isFilm(undefined), false);
+});
+
+test("the laminate question reads plainly and ends with Not sure", () => {
+  assert.equal(LAMINATE_QUESTION.key, "laminated");
+  assert.equal(LAMINATE_QUESTION.label, "Is the film laminated (two or more layers stuck together)?");
+  assert.deepEqual(LAMINATE_QUESTION.options.map((o) => o.value), ["no", "yes", "notSure"]);
+  assert.deepEqual(LAMINATE_QUESTION.options.map((o) => o.label), ["No, one layer", "Yes", "Not sure"]);
+  assert.equal(LAYERS_KEY, "laminateLayers");
+  assert.equal(LAYERS_LABEL, "Layers, outside first (optional)");
+  assert.equal(LAYERS_HINT, "For example: 12 micron PET / 50 micron PE");
+  assert.deepEqual([...LAMINATE_KEYS], ["laminated", "laminateLayers"]);
+  assert.equal(MAX_LAYERS, 120);
+});
+
+test("the laminate answer is never required and never holds a job", () => {
+  for (const k of LAMINATE_KEYS) {
+    assert.equal(REQUIRED_FIELDS.some((f) => f.key === k), false);
+    assert.equal(NOT_SURE_ALLOWED.includes(k), false);
+    assert.equal(PACK_KEYS.includes(k), false, "the three engine questions stay as they are");
+  }
+});
+
+test("only a listed laminate answer on a film job is kept; layers only when Yes", () => {
+  assert.deepEqual(
+    cleanLaminate({ material: "Clear BOPP", laminated: "yes", laminateLayers: "  20 micron BOPP /\n 25 micron CPP " }),
+    { laminated: "yes", laminateLayers: "20 micron BOPP / 25 micron CPP" },
+  );
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "no", laminateLayers: "12 PET / 50 PE" }), { laminated: "no" });
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "notSure", laminateLayers: "x" }), { laminated: "notSure" });
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "yes", laminateLayers: "   " }), { laminated: "yes" });
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "yes" }), { laminated: "yes" });
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "yes", laminateLayers: 12 }), { laminated: "yes" });
+  // Not a film: nothing kept, even a good answer (the customer changed the material).
+  assert.deepEqual(cleanLaminate({ material: "Brown Paper", laminated: "yes", laminateLayers: "12 PET" }), {});
+  assert.deepEqual(cleanLaminate({ laminated: "yes" }), {});
+  // Made-up answers: nothing kept.
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: "maybe", laminateLayers: "12 PET" }), {});
+  assert.deepEqual(cleanLaminate({ material: "PET", laminated: ["yes"] }), {});
+  assert.deepEqual(cleanLaminate(null), {});
+  assert.deepEqual(cleanLaminate("yes"), {});
+});
+
+test("the layers are one line of plain text, cut at 120", () => {
+  const long = "12 micron PET / ".repeat(20);
+  const kept = cleanLaminate({ material: "PET", laminated: "yes", laminateLayers: long }).laminateLayers;
+  assert.equal(kept.length, 120);
+  assert.equal(kept, long.replace(/\s+/g, " ").trim().slice(0, 120));
+  assert.equal(
+    cleanLaminate({ material: "PET", laminated: "yes", laminateLayers: "<b>12 PET</b>\u0007 — 50 PE–foil" }).laminateLayers,
+    "12 PET, 50 PE, foil",
+  );
+});
+
+test("the staff screen shows the laminate lines after the three, on film jobs only", () => {
+  assert.deepEqual(
+    packAnswerLines({ material: "White BOPP", foodContact: "no", laminated: "yes", laminateLayers: "12 PET / 50 PE" }),
+    ["Food touches the pack: No", "Laminated: Yes", "Layers, outside first: 12 PET / 50 PE"],
+  );
+  assert.deepEqual(packAnswerLines({ material: "PET", laminated: "no" }), ["Laminated: No, one layer"]);
+  assert.deepEqual(packAnswerLines({ material: "Cardboard", laminated: "yes", laminateLayers: "x" }), []);
+});
+
+test("the server keeps the laminate answer through its cleaner", () => {
+  const route = read("app/api/amber/submission/route.js");
+  assert.match(route, /import \{ cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
+  assert.match(route, /Object\.assign\(out, cleanLaminate\(input\)\);/);
+});
+
+test("the form asks the laminate question on films, and the layers only on Yes", () => {
+  const page = read("app/amber/page.jsx");
+  assert.match(page, /\{isFilm\(spec\.material\) && \(\s*<div data-laminate-question>/);
+  assert.match(page, /\{isFilm\(spec\.material\) && spec\[LAMINATE_QUESTION\.key\] === "yes" && \(\s*<div data-laminate-layers>/);
+  assert.match(page, /value=\{spec\[LAMINATE_QUESTION\.key\]\} options=\{LAMINATE_QUESTION\.options\}/);
+  assert.match(page, /onChange=\{\(v\) => update\(\{ \[LAMINATE_QUESTION\.key\]: v \}\)\}/);
+  assert.match(page, /<Text label=\{LAYERS_LABEL\} hint=\{LAYERS_HINT\}\s*value=\{spec\[LAYERS_KEY\]\} onChange=\{\(v\) => update\(\{ \[LAYERS_KEY\]: v \}\)\}/);
+});
+
+test("the staff screen does not show the laminate answer twice as raw names", () => {
+  assert.match(read("app/staff/file-checks/page.jsx"), /!LAMINATE_KEYS\.includes\(k\)/);
 });
