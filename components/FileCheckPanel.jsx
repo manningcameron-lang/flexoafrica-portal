@@ -17,6 +17,7 @@ import {
   AUTO_HEADING,
   DEFAULT_LIMIT_LINE,
   LEGAL_LINE,
+  showLegalLine,
   needsAnswer,
   readyToSubmit,
   splitForShow,
@@ -314,7 +315,7 @@ function Finding({ f, auto, choose, locked, pick, onPick, note, onNote, answered
           <p className="mt-1 text-sm font-medium text-ink break-words">{f.what}</p>
           {f.effect && <p className="mt-1 text-sm text-ink-muted break-words">{f.effect}</p>}
           {f.limitIsDefault && <p className="mt-1 text-xs text-ink-muted">({DEFAULT_LIMIT_LINE})</p>}
-          {f.legal && <p className="mt-1 text-xs italic text-ink-muted" data-legal-line>{LEGAL_LINE}</p>}
+          {showLegalLine(f) && <p className="mt-1 text-xs italic text-ink-muted" data-legal-line>{LEGAL_LINE}</p>}
           {typeof f.picture === "string" && f.picture.startsWith("data:image/jpeg;base64,") && (
             <img
               src={f.picture}

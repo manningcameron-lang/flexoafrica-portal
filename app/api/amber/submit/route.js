@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
 import { matchCustomer } from "@/lib/company-match";
+import { saveRegisterName } from "@/lib/company-sync";
 import {
   jobCreationDecision,
   mayCustomerSubmit,
@@ -89,6 +90,10 @@ export async function POST(request) {
     const settingsSnap = await db.collection("settings").doc("customers").get();
     const list = settingsSnap.exists ? settingsSnap.data()?.list || [] : [];
     const customer = matchCustomer(list, user.company || "");
+    // The job system makes this job under our customer list's name. Move the
+    // account onto that name too, or the customer cannot see the job (or
+    // answer AMBER's file check on it). Cam 24 Nov 2026.
+    await saveRegisterName(db, decoded.uid, user, list).catch(() => {});
     const poRequired = !!customer?.poApproved;
 
     const decision = jobCreationDecision(submission, { poRequired });

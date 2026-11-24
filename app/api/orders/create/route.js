@@ -3,7 +3,8 @@ import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, verifyRequest } from "@/lib/firebase-admin";
 import { PLATE_TYPES, SUBSTRATE_OPTIONS, TURNAROUND_TIERS, tierRateFor } from "@/lib/plate-types";
 import { priceLineItems, calcOrderTotals } from "@/lib/pricing";
-import { matchCustomer } from "@/lib/company-match";
+import { matchCustomer, registerNameFor } from "@/lib/company-match";
+import { saveRegisterName } from "@/lib/company-sync";
 import { PORTAL_DEMO_MODE, formatOrderNumber, formatJobNumber } from "@/lib/order-format";
 import { jobsForOrder } from "@/lib/order-jobs.mjs";
 import { buildPlateOrderAlert } from "@/lib/sales-alert.mjs";
@@ -72,6 +73,11 @@ export async function POST(request) {
     const settingsSnap = await adminDb.collection("settings").doc("customers").get();
     const list = settingsSnap.exists ? settingsSnap.data()?.list || [] : [];
     const customer = matchCustomer(list, company);
+    // Jobs are saved under our customer list's name, the same name the job
+    // system uses, and the account is moved onto it, so the customer sees
+    // every job of theirs whichever way it was made. Cam 24 Nov 2026.
+    const customerName = registerNameFor(list, company) || company;
+    await saveRegisterName(adminDb, decoded.uid, profile, list).catch(() => {});
 
     // Rate: the customer's negotiated rate, or undefined → priceLineItems falls
     // back to the public anchor. Never taken from the client.
@@ -204,7 +210,7 @@ export async function POST(request) {
         jobNumberInt,
         stage: "artwork",
         priority,
-        customer: company || profile.contactName || "Portal customer",
+        customer: customerName || profile.contactName || "Portal customer",
         printer: "",
         description: planned.description,
         dueDate: header.requiredByDate || "",
