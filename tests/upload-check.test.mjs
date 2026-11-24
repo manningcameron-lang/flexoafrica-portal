@@ -1,36 +1,56 @@
-// Tests for the instant machine check's link to the tools engine (Cam's pick
-// "C = both", 23 Nov 2026). The engine itself is the TOOLS thread's; these
-// prove the portal's side:
-//   - it stays OFF (the page shows nothing) until both settings are set;
-//   - calls both ways are signed, and unsigned, wrongly signed, old or
-//     tampered calls are refused;
+// Tests for the instant machine check's link to the tools engine, as the
+// tools thread built it (claude/tools-upload-check-live-2026-11-23-for-portal.md).
+// They prove the portal's side:
+//   - it stays OFF (the page shows nothing) until the signing key is set;
+//   - every call is signed the way the engine checks it (ECDSA P-256, the
+//     time, the upload and a fingerprint of the exact body), proved here
+//     against a throwaway key pair, and a changed body no longer verifies;
+//   - the file link is only ever a Firebase Storage https link;
 //   - whatever the engine sends goes through the same report check as
-//     AMBER's (a legal finding can never be above NOTE, never a half report).
+//     AMBER's (a legal finding can never be above NOTE, never a half report);
+//   - its pictures are shown only as small JPEGs.
 //
 // Every test here is mutation-tested by tests/mutate.mjs.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import {
-  CALLBACK_URL,
-  MAX_FILES_SENT,
-  TOLERANCE_SECONDS,
-  buildEngineRequest,
-  engineSettings,
-  pickCheckableFiles,
+  ENGINE_URL,
+  RUNNING_FOR_MS,
+  buildPollCall,
+  buildStartCall,
+  isAllowedFileUrl,
+  loadSigningKey,
+  pickCheckableFile,
   readEngineAnswer,
-  signBody,
-  signedHeaders,
-  verifySigned,
+  sha256Hex,
+  signHeaders,
 } from "../lib/upload-check-engine.mjs";
-import { AUTO_HEADING, BY_AUTO } from "../lib/file-check.mjs";
+import {
+  AUTO_HEADING,
+  BY_AUTO,
+  MAX_PICTURES,
+  STATUS_SENT,
+  checkReport,
+  customerView,
+  safePicture,
+} from "../lib/file-check.mjs";
 
 const read = (p) => readFileSync(p, "utf8");
-const KEY = "k".repeat(32);
 const NOW = 1795450000;
+
+// A throwaway key pair, made the way the real one was (P-256, private key as
+// base64 PKCS#8 DER). The tools site keeps only the public half.
+const pair = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+const PRIVATE_B64 = pair.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+const KEY = loadSigningKey({ PORTAL_TOOLS_SIGNING_KEY: PRIVATE_B64 });
+const verifies = (text, headers) =>
+  crypto.verify("sha256", Buffer.from(`${headers["x-portal-time"]}.${text}`), pair.publicKey, Buffer.from(headers["x-portal-signature"], "base64"));
+
+const PIC = "data:image/jpeg;base64," + "A".repeat(2000);
 
 function engineReport(extra = {}) {
   return {
@@ -39,38 +59,35 @@ function engineReport(extra = {}) {
     printer: "Crown Bag",
     pressClass: "stack",
     limitsAreDefaults: true,
+    printerKnown: false,
     findings: [
-      { id: 1, stage: "2 Size", level: "STOP", what: "Your file is 310 x 300 mm and the job is 304.8 x 250 mm.",
-        effect: "It will not fit the bag.", options: [{ key: "A", text: "AMBER refits it", recommended: true }, { key: "B", text: "You send a new file" }] },
+      { id: 1, fault: 11, stage: "2 Size", level: "STOP", what: "Your file is 310 x 300 mm and the job is 304.8 x 250 mm.",
+        effect: "It will not fit the bag.", picture: PIC,
+        options: [{ key: "A", text: "AMBER refits it", recommended: true }, { key: "B", text: "You send a new file" }] },
       { id: 2, stage: "10 Legal copy", level: "STOP", what: "\"Nett\" is spelt the old way.", effect: "Shops may query it.", options: [] },
     ],
     tidyList: [],
     notChecked: ["Whether a fade ends in open space"],
-    engineVersion: "1",
-    tookMs: 900,
     ...extra,
   };
 }
 
 // ─── the switch ──────────────────────────────────────────────────────────────
 
-test("OFF unless both the engine address and the key are set", () => {
-  assert.equal(engineSettings({}).on, false);
-  assert.equal(engineSettings({ UPLOAD_CHECK_URL: "https://tools.flexoafrica.com/api" }).on, false);
-  assert.equal(engineSettings({ UPLOAD_CHECK_KEY: KEY }).on, false);
-  assert.equal(engineSettings({ UPLOAD_CHECK_URL: "http://tools.flexoafrica.com", UPLOAD_CHECK_KEY: KEY }).on, false, "never over plain http");
-  assert.equal(engineSettings({ UPLOAD_CHECK_URL: "https://t.x", UPLOAD_CHECK_KEY: "short" }).on, false, "a key that short is a mistake");
-  const on = engineSettings({ UPLOAD_CHECK_URL: " https://tools.flexoafrica.com/api/// ", UPLOAD_CHECK_KEY: KEY });
-  assert.equal(on.on, true);
-  assert.equal(on.url, "https://tools.flexoafrica.com/api");
-  assert.equal(engineSettings({}).key, "", "no key is handed out while off");
+test("OFF unless a real private signing key is set", () => {
+  assert.equal(loadSigningKey({}), null);
+  assert.equal(loadSigningKey({ PORTAL_TOOLS_SIGNING_KEY: "   " }), null);
+  assert.equal(loadSigningKey({ PORTAL_TOOLS_SIGNING_KEY: "not a key" }), null);
+  const rsa = crypto.generateKeyPairSync("rsa", { modulusLength: 1024 });
+  assert.equal(loadSigningKey({ PORTAL_TOOLS_SIGNING_KEY: rsa.privateKey.export({ format: "der", type: "pkcs8" }).toString("base64") }), null, "only the P-256 kind the engine checks");
+  assert.notEqual(KEY, null);
+  assert.equal(KEY.asymmetricKeyType, "ec");
 });
 
-test("while OFF the start route answers off before touching anything", () => {
+test("while OFF the route answers off before touching anything", () => {
   const route = read("app/api/amber/upload-check/route.js");
   const body = route.split("export async function POST(request) {")[1];
-  assert.match(body.slice(0, 160), /const settings = engineSettings\(process\.env\);\n {2}if \(!settings\.on\) return NextResponse\.json\(\{ off: true \}\);/);
-  assert.match(read("app/api/amber/upload-check/callback/route.js"), /if \(!settings\.on\) return NextResponse\.json\(\{ error: "Not set up" \}, \{ status: 503 \}\);/);
+  assert.match(body.slice(0, 140), /const key = loadSigningKey\(process\.env\);\n {2}if \(!key\) return NextResponse\.json\(\{ off: true \}\);/);
 });
 
 test("the page shows nothing for it until there is something real", () => {
@@ -80,109 +97,105 @@ test("the page shows nothing for it until there is something real", () => {
   assert.match(panel, /\{auto && <p className="mt-2 text-sm font-semibold text-ink">\{AUTO_HEADING\}<\/p>\}/);
 });
 
-// ─── signing ─────────────────────────────────────────────────────────────────
-
-test("the signature is HMAC-SHA256 of '<timestamp>.<raw body>'", () => {
-  const body = '{"a":1}';
-  const want = "v1=" + crypto.createHmac("sha256", KEY).update(`${NOW}.${body}`).digest("hex");
-  assert.equal(signBody({ body, key: KEY, timestamp: NOW }), want);
-  const h = signedHeaders({ body, key: KEY, nowSeconds: NOW });
-  assert.equal(h["x-flexo-timestamp"], String(NOW));
-  assert.equal(h["x-flexo-signature"], want);
-  assert.equal(h["Content-Type"], "application/json");
+test("nothing can push a report into the portal: there is no call-back door", () => {
+  assert.equal(existsSync("app/api/amber/upload-check/callback/route.js"), false);
 });
 
-test("a correctly signed call is accepted", () => {
-  const body = JSON.stringify(engineReport());
-  const headers = signedHeaders({ body, key: KEY, nowSeconds: NOW });
-  assert.deepEqual(verifySigned({ body, headers, key: KEY, nowSeconds: NOW + 10 }), { valid: true, reason: null });
-  const viaGet = { get: (n) => headers[n] };
-  assert.equal(verifySigned({ body, headers: viaGet, key: KEY, nowSeconds: NOW }).valid, true);
+// ─── signing, proved against the public key the way the engine checks it ────
+
+test("a signature verifies with the matching public key, over '<time>.<text>'", () => {
+  const h = signHeaders("sub1.abc", KEY, NOW);
+  assert.equal(h["x-portal-time"], String(NOW));
+  assert.equal(verifies("sub1.abc", h), true);
+  assert.equal(verifies("sub1.abd", h), false, "other text does not verify");
+  const other = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  assert.equal(
+    crypto.verify("sha256", Buffer.from(`${NOW}.sub1.abc`), other.publicKey, Buffer.from(h["x-portal-signature"], "base64")),
+    false,
+    "another key's public half does not verify it",
+  );
 });
 
-test("unsigned, wrongly signed, tampered, old or keyless calls are refused", () => {
-  const body = JSON.stringify(engineReport());
-  const good = signedHeaders({ body, key: KEY, nowSeconds: NOW });
-  assert.equal(verifySigned({ body, headers: {}, key: KEY, nowSeconds: NOW }).reason, "not signed");
-  assert.equal(verifySigned({ body, headers: { "x-flexo-timestamp": String(NOW) }, key: KEY, nowSeconds: NOW }).reason, "not signed", "a time with no signature is unsigned");
-  assert.equal(verifySigned({ body, headers: { "x-flexo-signature": good["x-flexo-signature"] }, key: KEY, nowSeconds: NOW }).reason, "not signed", "a signature with no time is unsigned");
-  const otherKey = signedHeaders({ body, key: "z".repeat(32), nowSeconds: NOW });
-  assert.equal(verifySigned({ body, headers: otherKey, key: KEY, nowSeconds: NOW }).reason, "signature does not match");
-  assert.equal(verifySigned({ body: body.replace("STOP", "NOTE"), headers: good, key: KEY, nowSeconds: NOW }).valid, false, "a changed body fails");
-  assert.equal(verifySigned({ body, headers: good, key: KEY, nowSeconds: NOW + TOLERANCE_SECONDS + 1 }).reason, "too old or too new");
-  assert.equal(verifySigned({ body, headers: good, key: KEY, nowSeconds: NOW - TOLERANCE_SECONDS - 1 }).valid, false);
-  assert.equal(verifySigned({ body, headers: good, key: KEY, nowSeconds: NOW + TOLERANCE_SECONDS }).valid, true, "5 minutes is still fine");
-  assert.equal(verifySigned({ body, headers: { ...good, "x-flexo-timestamp": "soon" }, key: KEY, nowSeconds: NOW }).reason, "bad timestamp");
-  assert.equal(verifySigned({ body, headers: good, key: "", nowSeconds: NOW }).reason, "not set up");
-  assert.equal(TOLERANCE_SECONDS, 300);
-});
-
-test("the callback checks the signature on the raw body before reading it", () => {
-  const route = read("app/api/amber/upload-check/callback/route.js");
-  const sig = route.indexOf("const sig = verifySigned({ body: raw, headers: request.headers, key: settings.key });");
-  assert.ok(sig > 0);
-  assert.match(route, /if \(!sig\.valid\) return NextResponse\.json\(\{ error: "Unauthorized" \}, \{ status: 401 \}\);/);
-  assert.ok(sig < route.indexOf("JSON.parse(raw)"), "nothing is read before the signature is checked");
-  assert.match(route, /if \(!saved \|\| saved\.createdBy !== BY_AUTO \|\| saved\.status !== STATUS_DRAFT\) \{/, "it can only fill a check the portal started");
-});
-
-test("the portal signs what it sends the engine", () => {
-  const route = read("app/api/amber/upload-check/route.js");
-  assert.match(route, /headers: signedHeaders\(\{ body: payload, key: settings\.key \}\),\n\s+body: payload,/);
-  assert.match(route, /assertMayAct\(profile\); \/\/ the customer's own page only; staff never start it/);
-  assert.match(route, /if \(!submission \|\| !mayReadSubmission\(caller, submission\)\) \{/);
-});
-
-// ─── what is sent ────────────────────────────────────────────────────────────
-
-test("only artwork files are sent, at most 5, fonts and zips left out", () => {
-  const files = [
-    { name: "front.PDF" }, { name: "font.otf" }, { name: "all.zip" }, { name: "back.ai" },
-    { name: "a.tif" }, { name: "b.jpg" }, { name: "c.png" }, { name: "d.pdf" },
-  ];
-  const out = pickCheckableFiles(files);
-  assert.deepEqual(out.map((f) => f.name), ["front.PDF", "back.ai", "a.tif", "b.jpg", "c.png"]);
-  assert.equal(MAX_FILES_SENT, 5);
-  assert.deepEqual(pickCheckableFiles(null), []);
-});
-
-test("the request follows THE CONTRACT and asks for a call back", () => {
-  const r = buildEngineRequest({
-    submissionId: "sub1", checkId: "chk1",
-    files: [{ name: "a.pdf", bytes: 10, url: "https://signed/a" }, { name: "b.pdf", url: "https://signed/b" }],
-    spec: { width: "300" }, notSure: ["printer"],
+test("the start call signs the upload and the exact body sent", () => {
+  const call = buildStartCall({
+    submissionId: "sub1", fileUrl: "https://storage.googleapis.com/b/a.pdf?x=1", fileName: "front.pdf",
+    spec: { widthMm: "300", printer: "Crown Bag" }, notSure: ["barcode"], key: KEY, nowSeconds: NOW,
   });
-  assert.equal(r.submissionId, "sub1");
-  assert.equal(r.checkId, "chk1");
-  assert.equal(r.fileUrl, "https://signed/a");
-  assert.equal(r.files.length, 2);
-  assert.equal(r.files[1].bytes, 0);
-  assert.deepEqual(r.spec, { width: "300" });
-  assert.deepEqual(r.notSure, ["printer"]);
-  assert.equal(r.callbackUrl, CALLBACK_URL);
-  assert.equal(CALLBACK_URL, "https://portal.flexoafrica.com/api/amber/upload-check/callback");
-  const empty = buildEngineRequest({ submissionId: "s", checkId: "c" });
-  assert.equal(empty.fileUrl, null);
+  assert.equal(call.url, ENGINE_URL);
+  assert.equal(ENGINE_URL, "https://tools.flexoafrica.com/api/upload-check");
+  assert.equal(call.headers["content-type"], "application/json");
+  const parsed = JSON.parse(call.body);
+  assert.deepEqual(parsed, {
+    submissionId: "sub1", fileUrl: "https://storage.googleapis.com/b/a.pdf?x=1", fileName: "front.pdf",
+    spec: { widthMm: "300", printer: "Crown Bag" }, notSure: ["barcode"],
+  });
+  const text = `sub1.${sha256Hex(Buffer.from(call.body, "utf8"))}`;
+  assert.equal(verifies(text, call.headers), true);
+  const tampered = call.body.replace("300", "301");
+  assert.equal(verifies(`sub1.${sha256Hex(Buffer.from(tampered))}`, call.headers), false, "a changed body no longer verifies");
+  const empty = JSON.parse(buildStartCall({ submissionId: "s", fileUrl: "https://x", key: KEY }).body);
   assert.deepEqual(empty.spec, {});
+  assert.deepEqual(empty.notSure, []);
+  assert.equal(empty.fileName, "file");
+});
+
+test("the poll call signs the ticket; anything that is not a ticket is never sent", () => {
+  const p = buildPollCall({ ticket: "t_abc-123", key: KEY, nowSeconds: NOW });
+  assert.equal(p.url, `${ENGINE_URL}/t_abc-123`);
+  assert.equal(verifies("t_abc-123", p.headers), true);
+  for (const bad of ["", "abc", "../../etc", "a/b/c/d/e", "x".repeat(121), null, "abc def"]) {
+    assert.equal(buildPollCall({ ticket: bad, key: KEY }), null, `refused: ${bad}`);
+  }
+});
+
+test("only Firebase Storage https links go to the engine", () => {
+  assert.equal(isAllowedFileUrl("https://storage.googleapis.com/bucket/a.pdf?sig=1"), true);
+  assert.equal(isAllowedFileUrl("https://firebasestorage.googleapis.com/v0/b/x/o/a"), true);
+  assert.equal(isAllowedFileUrl("https://flexo.firebasestorage.app/a.pdf"), true);
+  assert.equal(isAllowedFileUrl("http://storage.googleapis.com/a.pdf"), false);
+  assert.equal(isAllowedFileUrl("https://storage.googleapis.com.evil.com/a.pdf"), false);
+  assert.equal(isAllowedFileUrl("https://evil.com/storage.googleapis.com"), false);
+  assert.equal(isAllowedFileUrl("not a link"), false);
+});
+
+test("the first artwork file is sent; fonts and zips are not", () => {
+  assert.equal(pickCheckableFile([{ name: "font.otf" }, { name: "all.zip" }, { name: "Back.AI" }, { name: "front.pdf" }]).name, "Back.AI");
+  assert.equal(pickCheckableFile([{ name: "font.ttf" }]), null);
+  assert.equal(pickCheckableFile(null), null);
 });
 
 // ─── what comes back ─────────────────────────────────────────────────────────
 
-test("a good engine report is accepted as automatic, with legal findings as NOTE", () => {
+test("a good engine report is accepted as automatic: legal as NOTE, missing Recommended read as no", () => {
   const a = readEngineAnswer(200, engineReport(), { submissionId: "sub1" });
   assert.equal(a.outcome, "report");
   assert.equal(a.report.createdBy, BY_AUTO);
   assert.equal(a.report.findings.find((f) => /Nett/.test(f.what)).level, "NOTE");
+  const stop = a.report.findings.find((f) => f.level === "STOP");
+  assert.deepEqual(stop.options.map((o) => o.recommended), [true, false]);
+  assert.equal(stop.picture, PIC);
+  assert.equal(a.report.limitsAreDefaults, true);
 });
 
-test("still working (202) waits for the call back", () => {
-  assert.deepEqual(readEngineAnswer(202, { ticket: "x" }), { outcome: "running" });
+test("a slow file answers with a ticket and a sensible wait", () => {
+  assert.deepEqual(readEngineAnswer(202, { ticket: "t_1234567", pollAfterMs: 3000 }), { outcome: "running", ticket: "t_1234567", pollAfterMs: 3000 });
+  assert.equal(readEngineAnswer(202, { ticket: "t_1234567", pollAfterMs: 10 }).pollAfterMs, 1000);
+  assert.equal(readEngineAnswer(202, { ticket: "t_1234567", pollAfterMs: 999999 }).pollAfterMs, 15000);
+  assert.equal(readEngineAnswer(202, { ticket: "t_1234567" }).pollAfterMs, 3000);
+  assert.equal(readEngineAnswer(202, { ticket: "../x" }).outcome, "error");
+  assert.equal(readEngineAnswer(202, {}).outcome, "error");
 });
 
 test("errors, a report for another upload, or a half report are never shown", () => {
-  assert.equal(readEngineAnswer(500, { code: "timed out" }).outcome, "error");
-  assert.match(readEngineAnswer(413, { code: "too big" }).message, /413 \(too big\)/);
+  assert.match(readEngineAnswer(413, { error: { code: "too_big", message: "x" } }).message, /413 \(too_big\)/);
+  assert.equal(readEngineAnswer(401, null).outcome, "error");
   assert.equal(readEngineAnswer(200, null).outcome, "error");
+  assert.equal(readEngineAnswer(200, { submissionId: "sub1", error: { code: "failed" } }, { submissionId: "sub1" }).outcome, "error");
+  assert.equal(
+    readEngineAnswer(200, engineReport({ error: { code: "failed", message: "stopped half way" } }), { submissionId: "sub1" }).outcome,
+    "error",
+    "a report that also says it failed is never shown, even with findings in it",
+  );
   assert.match(readEngineAnswer(200, engineReport(), { submissionId: "other" }).message, /different upload/);
   const half = engineReport();
   half.findings[0].level = "MAYBE";
@@ -192,9 +205,59 @@ test("errors, a report for another upload, or a half report are never shown", ()
   assert.equal(readEngineAnswer(200, leak, { submissionId: "sub1" }).outcome, "error");
 });
 
-test("the instant check is started once per upload and never by staff", () => {
+// ─── pictures ────────────────────────────────────────────────────────────────
+
+test("only small JPEG pictures are kept; anything else is dropped", () => {
+  assert.equal(safePicture(PIC), PIC);
+  assert.equal(safePicture("data:image/png;base64,AAAA"), null);
+  assert.equal(safePicture("data:image/svg+xml;base64,AAAA"), null, "no drawings that can carry script");
+  assert.equal(safePicture("https://evil.com/a.jpg"), null);
+  assert.equal(safePicture("javascript:alert(1)"), null);
+  assert.equal(safePicture("data:image/jpeg;base64,AA AA"), null);
+  assert.equal(safePicture("data:image/jpeg;base64," + "A".repeat(90000)), null, "too big");
+  assert.equal(safePicture(null), null);
+});
+
+test("at most 8 pictures in a report, and not too much in all", () => {
+  const r = engineReport();
+  r.findings = Array.from({ length: 10 }, (_, i) => ({ level: "NOTE", what: `n${i}`, picture: PIC }));
+  const out = checkReport(r, { createdBy: BY_AUTO }).report;
+  assert.equal(MAX_PICTURES, 8);
+  assert.equal(out.findings.filter((f) => f.picture).length, 8);
+  const big = engineReport();
+  const fat = "data:image/jpeg;base64," + "A".repeat(89000);
+  big.findings = Array.from({ length: 8 }, (_, i) => ({ level: "NOTE", what: `b${i}`, picture: fat }));
+  assert.equal(checkReport(big, { createdBy: BY_AUTO }).report.findings.filter((f) => f.picture).length, 6, "600 KB in all");
+});
+
+test("the customer's copy carries the picture, and the page shows only a JPEG", () => {
+  const r = { id: "a1", ...checkReport(engineReport(), { createdBy: BY_AUTO }).report, status: STATUS_SENT };
+  assert.equal(customerView(r).findings.find((f) => f.level === "STOP").picture, PIC);
+  const sneaky = { ...r, findings: r.findings.map((f) => ({ ...f, picture: "https://evil.com/x.jpg" })) };
+  assert.equal(customerView(sneaky).findings.every((f) => f.picture === null), true);
+  assert.match(read("components/FileCheckPanel.jsx"), /\{typeof f\.picture === "string" && f\.picture\.startsWith\("data:image\/jpeg;base64,"\) && \(/);
+});
+
+// ─── the route and the page ─────────────────────────────────────────────────
+
+test("the route signs both calls and checks whose upload it is", () => {
   const route = read("app/api/amber/upload-check/route.js");
-  assert.match(route, /const existing = \(await listReports\(db, sid\)\)\.find\(\(r\) => r\.createdBy === BY_AUTO\);\n {2}if \(existing\) \{/);
+  assert.match(route, /assertMayAct\(profile\); \/\/ the customer's own page only; staff never start it/);
+  assert.match(route, /if \(!submission \|\| !mayReadSubmission\(caller, submission\)\) \{/);
+  assert.match(route, /await callEngine\(call\.url, \{ method: "POST", headers: call\.headers, body: call\.body \}\);/);
+  assert.match(route, /await callEngine\(poll\.url, \{ method: "GET", headers: poll\.headers \}\);/);
+  assert.match(route, /if \(!isAllowedFileUrl\(fileUrl\)\) \{/);
+});
+
+test("a check runs once per upload; a slow one is only asked about while fresh", () => {
+  const route = read("app/api/amber/upload-check/route.js");
+  assert.match(route, /const existing = \(await listReports\(db, sid\)\)\.find\(\(r\) => r\.createdBy === BY_AUTO\);\n {2}if \(existing\) \{\n {4}if \(existing\.status === STATUS_SENT\) return NextResponse\.json\(\{ state: "ready" \}\);/);
+  assert.match(route, /const fresh = existing\.running === true && Date\.now\(\) - Number\(existing\.createdAtMs \|\| 0\) < RUNNING_FOR_MS;\n {4}if \(!fresh\) return NextResponse\.json\(\{ state: "none" \}\);/);
+  assert.equal(RUNNING_FOR_MS, 300000);
+});
+
+test("staff never start or poll it, and the page stops asking after about 5 minutes", () => {
   const panel = read("components/FileCheckPanel.jsx");
-  assert.match(panel, /if \(!staff && !d\.auto && !d\.autoRunning && tries === 0 && d\.submissionId\) \{/);
+  assert.match(panel, /if \(staff \|\| !d\.submissionId \|\| d\.auto \|\| tries >= 60\) return;/);
+  assert.match(panel, /if \(tries === 0 \|\| d\.autoRunning\) \{/);
 });
