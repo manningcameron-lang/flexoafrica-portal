@@ -15,7 +15,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { ReportCard } from "@/components/FileCheckPanel";
 import { mayReleaseFileCheck } from "@/lib/staff-view.mjs";
 import { BY_AMBER, LEVELS, STATUS_REVIEW, statusLabel } from "@/lib/file-check.mjs";
-import { LAMINATE_KEYS, PACK_KEYS, packAnswerLines } from "@/lib/pack-questions.mjs";
+import { INSPECTION_KEYS, LAMINATE_KEYS, PACK_KEYS, packAnswerLines } from "@/lib/pack-questions.mjs";
 import { flavourList, inksLine } from "@/lib/job-flavours.mjs";
 import {
   staffDelete,
@@ -149,7 +149,7 @@ function UploadDetail({ detail, mayRelease, onChanged }) {
         </p>
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
           {Object.entries(spec)
-            .filter(([k, v]) => k !== "description" && !PACK_KEYS.includes(k) && !LAMINATE_KEYS.includes(k) && v !== "" && v != null && typeof v !== "object")
+            .filter(([k, v]) => k !== "description" && !PACK_KEYS.includes(k) && !LAMINATE_KEYS.includes(k) && !INSPECTION_KEYS.includes(k) && v !== "" && v != null && typeof v !== "object")
             .map(([k, v]) => (
               <div key={k}>
                 <dt className="text-ink-muted">{k}</dt>

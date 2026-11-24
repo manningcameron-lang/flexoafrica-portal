@@ -76,14 +76,14 @@ test("the staff screen lines are in the form's order, answered ones only", () =>
 
 test("the server keeps the answers through the one cleaner", () => {
   const route = read("app/api/amber/submission/route.js");
-  assert.match(route, /import \{ cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
+  assert.match(route, /import \{ cleanInspectionAnswers, cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
   assert.match(route, /Object\.assign\(out, cleanPackAnswers\(input\)\);/);
 });
 
 test("the upload form asks all three, optional, from the one list", () => {
   const page = read("app/amber/page.jsx");
   assert.match(page, /\{PACK_QUESTIONS\.map\(\(q\) => \(/);
-  assert.match(page, /label=\{`\$\{q\.label\} \(optional\)`\} hint=\{q\.hint\}/);
+  assert.match(page, /<ChooseValued key=\{q\.key\} label=\{`\$\{q\.label\} \(optional\)`\} hint=\{q\.hint\}/);
   assert.match(page, /onChange=\{\(v\) => update\(\{ \[q\.key\]: v \}\)\}/);
   assert.match(page, /<Field label=\{label\} hint=\{hint \|\| undefined\}>/);
 });
@@ -184,7 +184,7 @@ test("the staff screen shows the laminate lines after the three, on film jobs on
 
 test("the server keeps the laminate answer through its cleaner", () => {
   const route = read("app/api/amber/submission/route.js");
-  assert.match(route, /import \{ cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
+  assert.match(route, /import \{ cleanInspectionAnswers, cleanLaminate, cleanPackAnswers \} from "@\/lib\/pack-questions\.mjs";/);
   assert.match(route, /Object\.assign\(out, cleanLaminate\(input\)\);/);
 });
 
@@ -199,4 +199,53 @@ test("the form asks the laminate question on films, and the layers only on Yes",
 
 test("the staff screen does not show the laminate answer twice as raw names", () => {
   assert.match(read("app/staff/file-checks/page.jsx"), /!LAMINATE_KEYS\.includes\(k\)/);
+});
+
+// ─── Print inspection and pharma (Cam, 24 Nov 2026 evening, "1/2/3") ───
+import { INSPECTION_KEYS, INSPECTION_QUESTIONS, cleanInspectionAnswers } from "../lib/pack-questions.mjs";
+
+test("the two inspection questions read as the spotter note asks", () => {
+  assert.deepEqual([...INSPECTION_KEYS], ["printInspection", "pharmaPack"]);
+  const q = Object.fromEntries(INSPECTION_QUESTIONS.map((x) => [x.key, x]));
+  assert.equal(q.printInspection.label, "Does your printer run 100% print inspection (a camera that checks every metre)?");
+  assert.deepEqual(q.printInspection.options.map((o) => [o.value, o.label]), [["yes", "Yes"], ["no", "No"], ["notSure", "Not sure"]]);
+  assert.equal(q.pharmaPack.label, "Is this a pharmaceutical or medical pack?");
+  assert.deepEqual(q.pharmaPack.options.map((o) => [o.value, o.label]), [["no", "No"], ["yes", "Yes"]]);
+  assert.equal(q.printInspection.hint, "");
+  assert.equal(q.pharmaPack.hint, "");
+});
+
+test("the inspection questions never hold a job and stay off the engine's three", () => {
+  for (const k of INSPECTION_KEYS) {
+    assert.equal(REQUIRED_FIELDS.some((f) => f.key === k), false);
+    assert.equal(NOT_SURE_ALLOWED.includes(k), false);
+    assert.equal(PACK_KEYS.includes(k), false);
+  }
+});
+
+test("only listed inspection answers are kept", () => {
+  assert.deepEqual(cleanInspectionAnswers({ printInspection: "yes", pharmaPack: "no", foodContact: "no" }),
+    { printInspection: "yes", pharmaPack: "no" });
+  assert.deepEqual(cleanInspectionAnswers({ printInspection: "notSure" }), { printInspection: "notSure" });
+  assert.deepEqual(cleanInspectionAnswers({ pharmaPack: "notSure", printInspection: "maybe" }), {});
+  assert.deepEqual(cleanInspectionAnswers({ printInspection: ["yes"], pharmaPack: true }), {});
+  assert.deepEqual(cleanInspectionAnswers(null), {});
+  assert.deepEqual(cleanInspectionAnswers(undefined), {});
+});
+
+test("the staff screen shows the inspection answers last, in plain words", () => {
+  assert.deepEqual(
+    packAnswerLines({ material: "PET", laminated: "no", pharmaPack: "yes", printInspection: "notSure", colourApproval: "screen" }),
+    ["Colour approved by: On screen", "Laminated: No, one layer",
+      "Printer runs camera inspection: Not sure", "Pharmaceutical or medical pack: Yes"],
+  );
+  assert.deepEqual(packAnswerLines({ pharmaPack: "maybe" }), []);
+});
+
+test("the server keeps the inspection answers, the form asks them, the staff screen skips the raw names", () => {
+  assert.match(read("app/api/amber/submission/route.js"), /Object\.assign\(out, cleanInspectionAnswers\(input\)\);/);
+  const page = read("app/amber/page.jsx");
+  assert.match(page, /\{INSPECTION_QUESTIONS\.map\(\(q\) => \(\s*<div key=\{q\.key\} data-inspection-question>/);
+  assert.match(page, /<ChooseValued label=\{`\$\{q\.label\} \(optional\)`\} hint=\{q\.hint\}\s*value=\{spec\[q\.key\]\} options=\{q\.options\}\s*onChange=\{\(v\) => update\(\{ \[q\.key\]: v \}\)\} \/>\s*<\/div>\s*\)\)\}\s*\{\/\* Film jobs only/);
+  assert.match(read("app/staff/file-checks/page.jsx"), /!INSPECTION_KEYS\.includes\(k\)/);
 });

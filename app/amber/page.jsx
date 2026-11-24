@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import { READ_ONLY_MESSAGE, isStaff } from "@/lib/staff-view.mjs";
 import {
+  INSPECTION_QUESTIONS,
   LAMINATE_QUESTION,
   LAYERS_HINT,
   LAYERS_KEY,
@@ -431,7 +432,7 @@ function AmberPageInner() {
           fine too.
         </p>
         <p className="mt-1 text-xs text-ink-muted">
-          PDF, AI, EPS, PSD, TIFF, ZIP and fonts. Up to 300 MB a file, 1 GB a job.
+          PDF, AI, EPS, PSD, TIFF, ZIP, Esko LEN and fonts. Up to 300 MB a file, 1 GB a job.
         </p>
         {progress && (
           <p className="mt-2 text-sm text-ink-muted">
@@ -570,6 +571,15 @@ function AmberPageInner() {
             <ChooseValued key={q.key} label={`${q.label} (optional)`} hint={q.hint}
               value={spec[q.key]} options={q.options}
               onChange={(v) => update({ [q.key]: v })} />
+          ))}
+          {/* Print inspection and pharma (Cam, 24 Nov 2026): optional, for
+              AMBER's inspection checks (faults 111 to 115). */}
+          {INSPECTION_QUESTIONS.map((q) => (
+            <div key={q.key} data-inspection-question>
+              <ChooseValued label={`${q.label} (optional)`} hint={q.hint}
+                value={spec[q.key]} options={q.options}
+                onChange={(v) => update({ [q.key]: v })} />
+            </div>
           ))}
           {/* Film jobs only: laminated, and the layers outside first.
               AMBER's reverse-print checks need it (Cam, 24 Nov 2026). */}
