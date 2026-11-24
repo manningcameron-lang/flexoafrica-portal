@@ -10,7 +10,7 @@ import StatusTimeline from "@/components/StatusTimeline";
 import ApprovalActions from "@/components/ApprovalActions";
 import JobCommentsThread from "@/components/JobCommentsThread";
 import FileCheckPanel from "@/components/FileCheckPanel";
-import { isStaff } from "@/lib/staff-view.mjs";
+import { isStaff, jobIsSomeoneElses } from "@/lib/staff-view.mjs";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -39,8 +39,9 @@ export default function JobDetailPage() {
       }
       shown.current = !!j;
       setError(null);
-      // Belt-and-braces: even though Firestore rules scope this, double-check.
-      if (j && user?.uid && j.customerUid && j.customerUid !== user.uid) {
+      // Belt-and-braces: a customer never sees another customer's job; staff
+      // see every job, read only (one rule, lib/staff-view.mjs).
+      if (jobIsSomeoneElses(j, user?.uid, staff)) {
         setError("This job belongs to another account.");
         setJob(null);
       } else {

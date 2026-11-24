@@ -30,6 +30,7 @@ import {
   customerPageGate,
   isActiveCustomer,
   isStaff,
+  jobIsSomeoneElses,
   postLoginPath,
   publicPageRedirect,
   showsSignedInMenu,
@@ -298,4 +299,33 @@ test("the gates all read the one rule", () => {
   assert.match(read("lib/auth.js"), /export \{ postLoginPath \} from "\.\/staff-view\.mjs";/);
   assert.match(read("components/Nav.jsx"), /showsSignedInMenu\(\{ user, profile, loading \}\)/);
   assert.match(read("components/Footer.jsx"), /showsSignedInMenu\(\{ user, profile, loading \}\)/);
+});
+
+// ─── a job page opened by staff (Cam, 24 Nov 2026) ──────────────────────────
+// Cam's admin login opening FA005545 (a Top Flight job) was told "This job
+// belongs to another account". Staff see every job, read only.
+
+test("staff can open any customer's job page", () => {
+  const job = { jobNumber: "FA005545", customerUid: "topflight-uid" };
+  assert.equal(jobIsSomeoneElses(job, ADMIN.uid, isStaff(ADMIN)), false);
+  assert.equal(jobIsSomeoneElses(job, DESIGNER.uid, isStaff(DESIGNER)), false);
+});
+
+test("a customer still cannot open another customer's job", () => {
+  const job = { jobNumber: "FA005545", customerUid: "someone-else" };
+  assert.equal(jobIsSomeoneElses(job, CUSTOMER.uid, isStaff(CUSTOMER)), true);
+  // Only a real true counts as staff: anything else is a customer.
+  assert.equal(jobIsSomeoneElses(job, CUSTOMER.uid, "yes"), true);
+});
+
+test("a customer opens their own job, and a job with no owner on it", () => {
+  assert.equal(jobIsSomeoneElses({ customerUid: CUSTOMER.uid }, CUSTOMER.uid, false), false);
+  assert.equal(jobIsSomeoneElses({ jobNumber: "FA002782" }, CUSTOMER.uid, false), false);
+  assert.equal(jobIsSomeoneElses(null, CUSTOMER.uid, false), false);
+});
+
+test("the job page uses the one rule, with the staff flag", () => {
+  const page = read("app/jobs/[id]/page.jsx");
+  assert.match(page, /jobIsSomeoneElses\(j, user\?\.uid, staff\)/);
+  assert.doesNotMatch(page, /customerUid !== user\.uid/);
 });
